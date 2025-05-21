@@ -75,7 +75,7 @@ const InventoryCalculator = () => {
   const [activeTab, setActiveTab] = useState("input");
 
   /* ---------------- helpers ---------------- */
-  const cdf = (x: number): number => {
+  const cdf = useCallback((x: number): number => {
     // Аппроксимация Абрамовица-Стегуна
     const a1 = 0.254829592;
     const a2 = -0.284496736;
@@ -91,12 +91,10 @@ const InventoryCalculator = () => {
     const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-absX * absX);
     
     return 0.5 * (1.0 + sign * y);
-  };
-
-  const pdf = (x: number): number => (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x);
+  }, []);
 
   // Обратная функция нормального распределения (Hastings, ±4e-4)
-  const invNorm = (p: number): number => {
+  const invNorm = useCallback((p: number): number => {
     if (p <= 0 || p >= 1) return NaN;
     const a1 = -39.696830, a2 = 220.946098, a3 = -275.928510, a4 = 138.357751, a5 = -30.664798, a6 = 2.506628;
     const b1 = -54.476098, b2 = 161.585836, b3 = -155.698979, b4 = 66.801311, b5 = -13.280681;
@@ -117,7 +115,7 @@ const InventoryCalculator = () => {
     q = p - 0.5; r = q * q;
     return (((((a1 * r + a2) * r + a3) * r + a4) * r + a5) * r + a6) * q /
       (((((b1 * r + b2) * r + b3) * r + b4) * r + b5) * r + 1);
-  };
+  }, []);
 
   const blackScholes = useCallback((S: number, K: number, T: number, sigma: number, r: number) => {
     if (T <= 0) return { optionValue: Math.max(0, S - K) };
@@ -129,7 +127,7 @@ const InventoryCalculator = () => {
   }, [cdf]);
 
   // Monte-Carlo ожидание lost-sales при запасе q
-  function mcDemandLoss(units: number, muWeek: number, sigmaWeek: number, weeks: number, trials: number = 1000): number {
+  const mcDemandLoss = useCallback((units: number, muWeek: number, sigmaWeek: number, weeks: number, trials: number = 1000): number => {
     const mean = muWeek * weeks;
     const std = sigmaWeek * Math.sqrt(weeks);
     let lostSum = 0;
@@ -141,17 +139,17 @@ const InventoryCalculator = () => {
       lostSum += Math.max(0, demand - units);
     }
     return lostSum / trials;
-  }
+  }, []);
 
   // Monte-Carlo для расчета относительной волатильности S
-  function calcSimpleSigmaBS(muWeek: number, sigmaWeek: number, weeks: number): number {
+  const calcSimpleSigmaBS = useCallback((muWeek: number, sigmaWeek: number, weeks: number): number => {
     // Простая формула для волатильности с защитой от деления на близкие к нулю значения
     const denom = Math.max(1e-6, muWeek * weeks);
     return sigmaWeek * Math.sqrt(weeks) / denom;
-  }
+  }, []);
 
   // ABC-анализ ассортимента
-  function abcAnalysis(items: Product[]): ProductWithCategory[] {
+  const abcAnalysis = useCallback((items: Product[]): ProductWithCategory[] => {
     if (!items || items.length === 0) return [];
     
     // Сортируем по выручке (от большей к меньшей)
@@ -177,7 +175,7 @@ const InventoryCalculator = () => {
       
       return { ...item, category, percent, accumPercent: accumulatedPercent };
     });
-  }
+  }, []);
 
   // Рассчитываем оптимальные параметры для текущего товара
   useEffect(() => {
@@ -216,7 +214,7 @@ const InventoryCalculator = () => {
     setOptQ(bestQ);
     setOptValue(bestNet);
     setSeries(pts);
-  }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, blackScholes]);
+  }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, invNorm, blackScholes, mcDemandLoss, calcSimpleSigmaBS]);
 
   // Рассчитываем оптимальные параметры для всего ассортимента
   useEffect(() => {
@@ -259,7 +257,7 @@ const InventoryCalculator = () => {
     setProducts(updatedProducts);
     // Выполняем ABC-анализ
     setAbcAnalysisResult(abcAnalysis(updatedProducts));
-  }, [rushSave, rushProb, hold, r, weeks, csl, products, blackScholes]);
+  }, [rushSave, rushProb, hold, r, weeks, csl, products, invNorm, blackScholes, mcDemandLoss, calcSimpleSigmaBS, abcAnalysis]);
 
   // Загрузка параметров выбранного товара
   const loadProduct = (product: Product) => {
