@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
 // Типы данных
@@ -119,14 +119,14 @@ const InventoryCalculator = () => {
       (((((b1 * r + b2) * r + b3) * r + b4) * r + b5) * r + 1);
   };
 
-  function blackScholes(S: number, K: number, T: number, sigma: number, r: number) {
+  const blackScholes = useCallback((S: number, K: number, T: number, sigma: number, r: number) => {
     if (T <= 0) return { optionValue: Math.max(0, S - K) };
     const d1 = (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
     const d2 = d1 - sigma * Math.sqrt(T);
     return {
       optionValue: S * cdf(d1) - K * Math.exp(-r * T) * cdf(d2),
     };
-  }
+  }, [cdf]);
 
   // Monte-Carlo ожидание lost-sales при запасе q
   function mcDemandLoss(units: number, muWeek: number, sigmaWeek: number, weeks: number, trials: number = 1000): number {
