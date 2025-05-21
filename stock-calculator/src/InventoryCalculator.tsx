@@ -216,7 +216,7 @@ const InventoryCalculator = () => {
     setOptQ(bestQ);
     setOptValue(bestNet);
     setSeries(pts);
-  }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl]);
+  }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, blackScholes]);
 
   // Рассчитываем оптимальные параметры для всего ассортимента
   useEffect(() => {
@@ -259,7 +259,7 @@ const InventoryCalculator = () => {
     setProducts(updatedProducts);
     // Выполняем ABC-анализ
     setAbcAnalysisResult(abcAnalysis(updatedProducts));
-  }, [rushSave, rushProb, hold, r, weeks, csl]);
+  }, [rushSave, rushProb, hold, r, weeks, csl, products, blackScholes]);
 
   // Загрузка параметров выбранного товара
   const loadProduct = (product: Product) => {
