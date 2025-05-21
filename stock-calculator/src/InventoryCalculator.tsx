@@ -218,7 +218,14 @@ const InventoryCalculator = () => {
 
   // Рассчитываем оптимальные параметры для всего ассортимента
   useEffect(() => {
-    const updatedProducts = products.map(product => {
+    const initialProducts = [
+      { id: 1, name: "Товар A", sku: "SKU001", purchase: 7.5, margin: 18, muWeek: 75, sigmaWeek: 25, revenue: 120000, optQ: 0, optValue: 0, safety: 0 },
+      { id: 2, name: "Товар B", sku: "SKU002", purchase: 12.0, margin: 22, muWeek: 55, sigmaWeek: 18, revenue: 95000, optQ: 0, optValue: 0, safety: 0 },
+      { id: 3, name: "Товар C", sku: "SKU003", purchase: 4.2, margin: 8.5, muWeek: 130, sigmaWeek: 45, revenue: 85000, optQ: 0, optValue: 0, safety: 0 },
+      { id: 4, name: "Товар D", sku: "SKU004", purchase: 18.5, margin: 35, muWeek: 25, sigmaWeek: 10, revenue: 75000, optQ: 0, optValue: 0, safety: 0 },
+      { id: 5, name: "Товар E", sku: "SKU005", purchase: 5.0, margin: 12, muWeek: 95, sigmaWeek: 30, revenue: 65000, optQ: 0, optValue: 0, safety: 0 },
+    ];
+    const updatedProducts = initialProducts.map(product => {
       const z = invNorm(csl);
       const productSafety = Math.ceil(z * product.sigmaWeek * Math.sqrt(weeks));
       
@@ -257,7 +264,7 @@ const InventoryCalculator = () => {
     setProducts(updatedProducts);
     // Выполняем ABC-анализ
     setAbcAnalysisResult(abcAnalysis(updatedProducts));
-  }, [rushSave, rushProb, hold, r, weeks, csl, products, invNorm, blackScholes, mcDemandLoss, calcSimpleSigmaBS, abcAnalysis]);
+  }, [rushSave, rushProb, hold, r, weeks, csl, invNorm, blackScholes, mcDemandLoss, calcSimpleSigmaBS, abcAnalysis]);
 
   // Загрузка параметров выбранного товара
   const loadProduct = (product: Product) => {
