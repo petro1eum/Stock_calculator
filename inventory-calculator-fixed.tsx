@@ -82,7 +82,11 @@ const InventoryOptionCalculator = () => {
   };
 
   function blackScholes(S, K, T, sigma, r) {
+    // Защита от edge cases
     if (T <= 0) return { optionValue: Math.max(0, S - K) };
+    if (S <= 1e-6 || K <= 1e-6) return { optionValue: Math.max(0, S - K) };
+    if (sigma <= 1e-6) return { optionValue: Math.max(0, S - K) };
+    
     const d1 = (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
     const d2 = d1 - sigma * Math.sqrt(T);
     return {
@@ -109,7 +113,9 @@ const InventoryOptionCalculator = () => {
   function calcSimpleSigmaBS(muWeek, sigmaWeek, weeks) {
     // Простая формула для волатильности с защитой от деления на близкие к нулю значения
     const denom = Math.max(1e-6, muWeek * weeks);
-    return sigmaWeek * Math.sqrt(weeks) / denom;
+    const calculatedSigma = sigmaWeek * Math.sqrt(weeks) / denom;
+    // Убеждаемся, что sigma > 0 для Black-Scholes
+    return Math.max(1e-4, calculatedSigma);
   }
 
   // ABC-анализ ассортимента
@@ -156,8 +162,9 @@ const InventoryOptionCalculator = () => {
     const sigmaBS = calcSimpleSigmaBS(muWeek, sigmaWeek, weeks);
     
     for (let q = 0; q <= maxUnits; q += step) {
+      const expected_demand = muWeek * weeks;
       const lost = Math.round(mcDemandLoss(q, muWeek, sigmaWeek, weeks));
-      const served = q - lost;
+      const served = Math.min(q, Math.max(0, expected_demand - lost));
       const S = served * margin + lost * rushSave * rushProb;
       
       // Исправленная формула для K (затраты в момент исполнения опциона)
@@ -193,9 +200,10 @@ const InventoryOptionCalculator = () => {
       // Рассчитываем волатильность упрощенным методом
       const sigmaBS = calcSimpleSigmaBS(product.muWeek, product.sigmaWeek, weeks);
       
-      for (let q = 0; q <= 3000; q += step) {
+      for (let q = 0; q <= maxUnits; q += step) {
+        const expected_demand = product.muWeek * weeks;
         const lost = Math.round(mcDemandLoss(q, product.muWeek, product.sigmaWeek, weeks));
-        const served = q - lost;
+        const served = Math.min(q, Math.max(0, expected_demand - lost));
         const S = served * product.margin + lost * rushSave * rushProb;
         
         // Исправленная формула для K (затраты в момент исполнения опциона)

@@ -1,46 +1,139 @@
-# Getting Started with Create React App
+# 📊 Опционный анализ запасов (Stock Calculator)
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Профессиональное приложение для оптимизации уровня запасов с использованием теории реальных опционов и модели Black-Scholes.
 
-## Available Scripts
+## 🚀 Как запустить
 
-In the project directory, you can run:
+```bash
+cd stock-calculator
+npm install
+npm start
+```
 
-### `npm start`
+Приложение откроется на http://localhost:3000
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+## 📋 Возможности
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+### 🏪 Управление ассортиментом
+- **Добавление товаров**: Создавайте новые SKU с индивидуальными параметрами
+- **Редактирование**: Изменяйте параметры существующих товаров
+- **Удаление**: Удаляйте неактуальные товары
+- **Демо-данные**: Загрузите пример данных для быстрого старта
+- **Автогенерация SKU**: Автоматическое создание уникальных артикулов
 
-### `npm test`
+### 📊 Анализ товаров
+- **Индивидуальный анализ**: Детальный разбор каждого товара
+- **График оптимизации**: Визуализация зависимости прибыли от объема заказа
+- **Рекомендации**: Автоматические советы по управлению запасами
+- **Ключевые метрики**: Оптимальный запас, safety-stock, ROI
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### ⚙️ Настройки модели
+- **Глобальные параметры**: Настройки, применяемые ко всем товарам
+- **Rush-поставки**: Моделирование экстренных поставок
+- **Финансовые параметры**: Ставка капитала, стоимость хранения
+- **Уровень сервиса**: Целевой CSL для расчета safety-stock
 
-### `npm run build`
+### 📈 ABC-анализ
+- **Автоматическая категоризация**: Разделение товаров на группы A, B, C
+- **Рекомендации по управлению**: Индивидуальная стратегия для каждой категории
+- **Анализ выручки**: Расчет вклада каждого товара в общую выручку
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## 🎯 Как пользоваться
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### 1. Начало работы
+1. Откройте вкладку **"Управление ассортиментом"**
+2. Нажмите **"Загрузить демо-данные"** для примера или **"+ Добавить товар"** для создания своего ассортимента
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### 2. Добавление товара
+Заполните обязательные поля:
+- **Название товара**: Описательное название
+- **SKU**: Уникальный артикул (автогенерируется)
+- **Закупочная цена**: Стоимость закупки за единицу
+- **Маржа**: Прибыль с единицы товара
+- **Спрос**: Средний и стандартное отклонение недельного спроса
 
-### `npm run eject`
+### 3. Настройка модели
+Перейдите в **"Настройки модели"** и настройте:
+- **Период поставки**: Время выполнения заказа
+- **Ставка капитала**: Стоимость замороженных средств
+- **Rush-параметры**: Возможность экстренных поставок
+- **Уровень сервиса**: Целевой CSL
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+### 4. Анализ результатов
+- Нажмите **"Анализ"** для любого товара
+- Изучите оптимальный объем заказа и рекомендации
+- Используйте график для понимания экономического эффекта
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## 🧮 Математическая модель
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+Приложение использует подход **реальных опционов**, где:
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+- **S (базовый актив)** = Ожидаемая выгода от наличия товара
+- **K (цена исполнения)** = Затраты на заказ и хранение
+- **σ (волатильность)** = Относительное стандартное отклонение спроса
+- **T (время до экспирации)** = Период поставки
+- **r (безрисковая ставка)** = Стоимость капитала
 
-## Learn More
+### Формула оптимизации:
+```
+Оптимальное значение = Black-Scholes Call Option Value
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+### Компоненты расчета:
+- **Обслуженный спрос**: `min(запас, ожидаемый_спрос - потери)`
+- **Выгода**: `обслуженный_спрос × маржа + потери × rush_экономия × rush_вероятность`
+- **Затраты**: `запас × (закуп_цена × (1 + r × T) + хранение × T)`
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## 📊 Интерпретация результатов
+
+### Цветовые индикаторы:
+- 🟢 **Зеленый**: Положительная ценность опциона, оптимальное решение
+- 🟡 **Желтый**: Оптимальный запас ниже safety-stock, есть риски
+- 🔴 **Красный**: Отрицательная ценность, запасать невыгодно
+
+### Рекомендации:
+- **Категория A**: Высокий контроль, CSL 99%, частые поставки
+- **Категория B**: Средний контроль, CSL 95%, стандартные сроки  
+- **Категория C**: Низкий контроль, CSL 90%, увеличенные периоды
+
+## 🔧 Технические детали
+
+### Стек технологий:
+- **Frontend**: React 18 + TypeScript
+- **Графики**: Recharts
+- **Стилизация**: Tailwind CSS
+- **Математика**: Custom Black-Scholes implementation
+
+### Архитектура:
+- Модульная структура компонентов
+- Оптимизация производительности с `useMemo` и `useCallback`
+- Типобезопасность с TypeScript интерфейсами
+- Реактивные обновления при изменении параметров
+
+## 📈 Примеры использования
+
+### Сценарий 1: Новый товар
+1. Добавьте товар с предварительными параметрами
+2. Настройте спрос на основе исторических данных
+3. Проанализируйте результат и скорректируйте параметры
+
+### Сценарий 2: Оптимизация существующего ассортимента
+1. Загрузите текущие товары
+2. Проведите ABC-анализ
+3. Сфокусируйтесь на категории A для максимального эффекта
+
+### Сценарий 3: Сезонные изменения
+1. Измените параметры спроса для сезонных товаров
+2. Скорректируйте уровень сервиса по категориям
+3. Пересчитайте оптимальные запасы
+
+## 🆘 Поддержка
+
+При возникновении вопросов:
+1. Проверьте правильность введенных параметров
+2. Убедитесь, что спрос и цены указаны в корректных единицах
+3. Используйте демо-данные для понимания логики работы
+
+## 📝 Лицензия
+
+MIT License - используйте свободно для коммерческих и некоммерческих целей.
