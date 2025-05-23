@@ -41,21 +41,22 @@ interface SliderWithValueProps {
 const InventoryOptionCalculator = () => {
   /* ----- входные значения ----- */
   const [maxUnits, setMaxUnits] = useState(3000); // диапазон q
-  const [purchase] = useState(8.5);  // $/шт закуп
-  const [margin] = useState(15);       // $/шт маржа
+  const [purchase, setPurchase] = useState(8.5);  // $/шт закуп
+  const [margin, setMargin] = useState(15);       // $/шт маржа
   const [rushSave, setRushSave] = useState(3);    // $/шт экономия rush
   const [rushProb, setRushProb] = useState(0.2);  // вероятность rush
   const [hold, setHold] = useState(0.5);          // $/шт хранение
   const [r, setR] = useState(0.06);               // ставка капитала
   const [weeks, setWeeks] = useState(13);         // lead-time
-  const [muWeek] = useState(800 / 13); // средн. спрос неделя
-  const [sigmaWeek] = useState(0.35 * (800 / 13)); // σ спроса
+  const [muWeek, setMuWeek] = useState(800 / 13); // средн. спрос неделя
+  const [sigmaWeek, setSigmaWeek] = useState(0.35 * (800 / 13)); // σ спроса
   const [csl, setCsl] = useState(0.95);           // целевой CSL
 
   /* ----- вывод ----- */
   const [optQ, setOptQ] = useState(0);
   const [optValue, setOptValue] = useState(0);
   const [safety, setSafety] = useState(0);
+  const [series, setSeries] = useState<ChartPoint[]>([]);
   
   /* ----- ассортимент ----- */
   const [products, setProducts] = useState<Product[]>([]);
@@ -77,14 +78,14 @@ const InventoryOptionCalculator = () => {
     sigmaWeek: 0
   });
 
-  // ИСПРАВЛЕНО: Перемещаю demoProducts в useMemo для исправления dependency warning
-  const demoProducts: Product[] = useMemo(() => [
+  // Демо данные (загружаются по кнопке)
+  const demoProducts: Product[] = [
     { id: 1, name: "Товар A", sku: "SKU001", purchase: 7.5, margin: 18, muWeek: 75, sigmaWeek: 25, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
     { id: 2, name: "Товар B", sku: "SKU002", purchase: 12.0, margin: 22, muWeek: 55, sigmaWeek: 18, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
     { id: 3, name: "Товар C", sku: "SKU003", purchase: 4.2, margin: 8.5, muWeek: 130, sigmaWeek: 45, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
     { id: 4, name: "Товар D", sku: "SKU004", purchase: 18.5, margin: 35, muWeek: 25, sigmaWeek: 10, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
     { id: 5, name: "Товар E", sku: "SKU005", purchase: 5.0, margin: 12, muWeek: 95, sigmaWeek: 30, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
-  ], []);
+  ];
 
   /* ---------------- helpers ---------------- */
   const cdf = useCallback((x: number): number => {
@@ -132,8 +133,7 @@ const InventoryOptionCalculator = () => {
   const blackScholes = useCallback((S: number, K: number, T: number, sigma: number, r: number): { optionValue: number } => {
     // Защита от edge cases
     if (T <= 0) return { optionValue: Math.max(0, S - K) };
-    if (S <= 1e-6) return { optionValue: 0 }; // Нет актива - нет опциона
-    if (K <= 1e-6) return { optionValue: 0 }; // ИСПРАВЛЕНО: нет затрат - нет смысла в опционе
+    if (S <= 1e-6 || K <= 1e-6) return { optionValue: Math.max(0, S - K) };
     if (sigma <= 1e-6) return { optionValue: Math.max(0, S - K) };
     
     const d1 = (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
@@ -158,13 +158,59 @@ const InventoryOptionCalculator = () => {
     return lostSum / trials;
   }, []);
 
-  // Monte-Carlo для расчета относительной волатильности S
-  const calcSimpleSigmaBS = useCallback((muWeek: number, sigmaWeek: number, weeks: number): number => {
-    // Простая формула для волатильности с защитой от деления на близкие к нулю значения
-    const denom = Math.max(1e-6, muWeek * weeks);
-    const calculatedSigma = sigmaWeek * Math.sqrt(weeks) / denom;
-    // Убеждаемся, что sigma > 0 для Black-Scholes
-    return Math.max(1e-4, calculatedSigma);
+  // ИСПРАВЛЕНО: Расчет ожидаемой выручки (S - spot price)
+  const calculateExpectedRevenue = useCallback((q: number, muWeek: number, sigmaWeek: number, weeks: number, purchase: number, margin: number, rushProb: number, rushSave: number): number => {
+    // Ожидаемый спрос за период
+    const expectedDemand = muWeek * weeks;
+    
+    // Рассчитываем потерянные продажи через Monte Carlo
+    const lost = mcDemandLoss(q, muWeek, sigmaWeek, weeks);
+    
+    // Продано через обычный канал
+    const normalSales = Math.min(q, Math.max(0, expectedDemand - lost));
+    
+    // Продано через rush-поставки (с вероятностью rushProb)
+    const rushSales = lost * rushProb;
+    
+    // Полная цена продажи
+    const fullPrice = purchase + margin;
+    
+    // Rush-продажи идут по полной цене, но нам обходятся дороже на rushSave
+    // Экономия rushSave означает, что rush-поставка дороже обычной на эту сумму
+    // Поэтому маржа от rush-продажи = margin - rushSave
+    const rushRevenue = rushSales * fullPrice;
+    
+    // ИСПРАВЛЕНО: S = полная выручка от всех продаж
+    const S = normalSales * fullPrice + rushRevenue;
+    
+    return S;
+  }, [mcDemandLoss]);
+
+  // ИСПРАВЛЕНО: Расчет волатильности для Black-Scholes
+  const calculateVolatility = useCallback((muWeek: number, sigmaWeek: number, weeks: number, q: number): number => {
+    // Волатильность выручки зависит от волатильности спроса
+    // и от того, насколько мы можем удовлетворить спрос
+    
+    const expectedDemand = muWeek * weeks;
+    const demandStd = sigmaWeek * Math.sqrt(weeks);
+    
+    // Защита от деления на ноль
+    if (expectedDemand <= 0) return 0.1;
+    
+    // Коэффициент вариации спроса
+    const cvDemand = demandStd / expectedDemand;
+    
+    // Если q >> expectedDemand, то волатильность выручки ≈ волатильность спроса
+    // Если q << expectedDemand, то волатильность выручки меньше
+    const fillRate = Math.min(1, q / expectedDemand);
+    
+    // Эмпирическая формула для волатильности выручки
+    // При fillRate = 1, волатильность максимальна
+    // При fillRate → 0, волатильность → 0
+    const revenueVolatility = cvDemand * Math.sqrt(fillRate);
+    
+    // Минимальная волатильность для численной стабильности
+    return Math.max(0.01, revenueVolatility);
   }, []);
 
   // ABC-анализ ассортимента
@@ -196,7 +242,7 @@ const InventoryOptionCalculator = () => {
     });
   }, []);
 
-  // Рассчитываем оптимальные параметры для текущего товара
+  // ИСПРАВЛЕНО: Рассчитываем оптимальные параметры для текущего товара
   useEffect(() => {
     // safety-stock
     const z = invNorm(csl);
@@ -207,30 +253,23 @@ const InventoryOptionCalculator = () => {
     // Делаем шаг динамическим, зависящим от объема спроса (минимум 1)
     const step = Math.max(1, Math.round(muWeek / 10));
     
-    // Рассчитываем волатильность упрощенным методом (для стабильности артефакта)
-    const sigmaBS = calcSimpleSigmaBS(muWeek, sigmaWeek, weeks);
-    
     for (let q = 0; q <= maxUnits; q += step) {
-      const expected_demand = muWeek * weeks;
-      const lost = Math.round(mcDemandLoss(q, muWeek, sigmaWeek, weeks));
+      // ИСПРАВЛЕНО: Рассчитываем S как полную выручку
+      const S = calculateExpectedRevenue(q, muWeek, sigmaWeek, weeks, purchase, margin, rushProb, rushSave);
       
-      // ИСПРАВЛЕНО: Правильная формула обслуженного спроса
-      const served = expected_demand - lost;
-      
-      // ИСПРАВЛЕНО: Rush-экономия только если есть запас для обработки заказов
-      const rushRevenue = q > 0 ? lost * rushSave * rushProb : 0;
-      const S = served * margin + rushRevenue;
-      
-      // Исправленная формула для K (затраты в момент исполнения опциона)
+      // K - полные затраты (закупка + хранение + проценты)
       const K = q * purchase * (1 + r * weeks / 52) + q * hold * weeks;
       
+      // Время до "исполнения" в годах
       const T = weeks / 52;
       
-      // Расчет опционной стоимости с использованием модели Блэка-Шоулза
-      const { optionValue } = blackScholes(S, K, T, sigmaBS, r);
+      // ИСПРАВЛЕНО: Волатильность зависит от q
+      const sigma = calculateVolatility(muWeek, sigmaWeek, weeks, q);
       
-      // ИСПРАВЛЕНИЕ: Чистая ценность опциона - это просто optionValue,
-      // так как в модели Блэка-Шоулза K уже учтен как дисконтированная цена исполнения
+      // Расчет стоимости опциона
+      const { optionValue } = blackScholes(S, K, T, sigma, r);
+      
+      // Чистая приведенная стоимость решения о закупке q единиц
       const net = optionValue;
       
       if (net > bestNet) { bestNet = net; bestQ = q; }
@@ -238,9 +277,10 @@ const InventoryOptionCalculator = () => {
     }
     setOptQ(bestQ);
     setOptValue(bestNet);
-  }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, blackScholes, mcDemandLoss, calcSimpleSigmaBS, invNorm]);
+    setSeries(pts);
+  }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, blackScholes, calculateExpectedRevenue, calculateVolatility, invNorm]);
 
-  // Рассчитываем оптимальные параметры для всего ассортимента
+  // ИСПРАВЛЕНО: Рассчитываем оптимальные параметры для всего ассортимента
   const productsWithMetrics = useMemo(() => {
     return products.map(product => {
       const z = invNorm(csl);
@@ -250,24 +290,14 @@ const InventoryOptionCalculator = () => {
       // Динамический шаг в зависимости от объема спроса (минимум 1)
       const step = Math.max(1, Math.round(product.muWeek / 10));
       
-      // Рассчитываем волатильность упрощенным методом
-      const sigmaBS = calcSimpleSigmaBS(product.muWeek, product.sigmaWeek, weeks);
-      
       for (let q = 0; q <= maxUnits; q += step) {
-        const expected_demand = product.muWeek * weeks;
-        const lost = Math.round(mcDemandLoss(q, product.muWeek, product.sigmaWeek, weeks));
-        
-        // ИСПРАВЛЕНО: Правильная формула обслуженного спроса
-        const served = expected_demand - lost;
-        
-        // ИСПРАВЛЕНО: Rush-экономия только если есть запас для обработки заказов
-        const rushRevenue = q > 0 ? lost * rushSave * rushProb : 0;
-        const S = served * product.margin + rushRevenue;
-        
+        // ИСПРАВЛЕНО: Используем новые функции расчета
+        const S = calculateExpectedRevenue(q, product.muWeek, product.sigmaWeek, weeks, product.purchase, product.margin, rushProb, rushSave);
         const K = q * product.purchase * (1 + r * weeks / 52) + q * hold * weeks;
         const T = weeks / 52;
-        const { optionValue } = blackScholes(S, K, T, sigmaBS, r);
-        // ИСПРАВЛЕНИЕ: Чистая ценность опциона - это просто optionValue
+        const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q);
+        
+        const { optionValue } = blackScholes(S, K, T, sigma, r);
         const net = optionValue;
         
         if (net > bestNet) { bestNet = net; bestQ = q; }
@@ -280,7 +310,7 @@ const InventoryOptionCalculator = () => {
         safety: productSafety
       };
     });
-  }, [products, rushSave, rushProb, hold, r, weeks, csl, blackScholes, mcDemandLoss, calcSimpleSigmaBS, invNorm, maxUnits]);
+  }, [products, rushSave, rushProb, hold, r, weeks, csl, blackScholes, calculateExpectedRevenue, calculateVolatility, invNorm, maxUnits]);
 
   // ABC-анализ с использованием продуктов с рассчитанными метриками
   const abcAnalysisResult = useMemo(() => {
@@ -317,19 +347,6 @@ const InventoryOptionCalculator = () => {
     setSelectedProduct(null);
   }, []);
 
-  const resetProductForm = useCallback(() => {
-    setProductForm({
-      name: "",
-      sku: generateNextSku(),
-      purchase: 0,
-      margin: 0,
-      muWeek: 0,
-      sigmaWeek: 0
-    });
-    setEditingProductId(null);
-    setShowProductForm(false);
-  }, [generateNextSku]);
-
   const addProduct = useCallback(() => {
     if (!productForm.name.trim() || !productForm.sku.trim()) {
       alert('Пожалуйста, заполните название и SKU товара');
@@ -363,7 +380,7 @@ const InventoryOptionCalculator = () => {
     }
 
     resetProductForm();
-  }, [productForm, products, editingProductId, generateNextId, resetProductForm]);
+  }, [productForm, products, editingProductId, generateNextId]);
 
   const editProduct = useCallback((product: Product) => {
     setProductForm({
@@ -387,6 +404,19 @@ const InventoryOptionCalculator = () => {
     }
   }, [selectedProduct]);
 
+  const resetProductForm = useCallback(() => {
+    setProductForm({
+      name: "",
+      sku: generateNextSku(),
+      purchase: 0,
+      margin: 0,
+      muWeek: 0,
+      sigmaWeek: 0
+    });
+    setEditingProductId(null);
+    setShowProductForm(false);
+  }, [generateNextSku]);
+
   const selectProductForAnalysis = useCallback((product: Product) => {
     setSelectedProduct(product.id);
     setActiveTab("productAnalysis");
@@ -403,6 +433,11 @@ const InventoryOptionCalculator = () => {
   }, [products, showProductForm, editingProductId, generateNextSku]);
 
   const fmt = (n: number): string => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const badgeColor = optQ < safety ? "bg-yellow-500 text-white" : optValue > 0 ? "bg-green-500 text-white" : "bg-red-500 text-white";
+
+  // Расчет капитальных затрат и процентов отдельно
+  const frozenCapital = optQ * purchase;
+  const capitalInterest = optQ * purchase * r * weeks / 52;
 
   // Компонент слайдера с полем ввода значения
   const SliderWithValue: React.FC<SliderWithValueProps> = ({ label, value, onChange, min, max, step, tooltip, unit = "" }) => {
@@ -480,7 +515,7 @@ const InventoryOptionCalculator = () => {
 
   return (
     <div className="p-6 space-y-6 bg-gray-50 font-sans">
-      <h1 className="text-2xl font-bold text-center mb-4">Опционный анализ запаса (SKU)</h1>
+      <h1 className="text-2xl font-bold text-center mb-4">Опционный анализ запаса (Black-Scholes)</h1>
       
       {/* Вкладки */}
       <div className="flex border-b border-gray-200">
@@ -510,7 +545,94 @@ const InventoryOptionCalculator = () => {
         >
           ABC-анализ
         </button>
+        <button 
+          className={`px-4 py-2 font-medium text-sm ${activeTab === "theory" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"}`}
+          onClick={() => setActiveTab("theory")}
+        >
+          📚 Теория
+        </button>
       </div>
+      
+      {/* Вкладка Теория */}
+      {activeTab === "theory" && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold mb-4">Теория: Black-Scholes для управления запасами</h3>
+          
+          <div className="space-y-4">
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
+              <h4 className="font-semibold text-blue-800 mb-2">Ключевая идея</h4>
+              <p className="text-sm text-blue-900">
+                Решение о закупке запаса рассматривается как покупка колл-опциона на будущую выручку. 
+                Мы имеем право (но не обязанность) продать товар и получить выручку, заплатив за это право 
+                стоимость закупки и хранения.
+              </p>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold mb-2">Параметры модели Black-Scholes</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="border rounded-lg p-3">
+                  <h5 className="font-medium text-blue-600">S (Spot Price)</h5>
+                  <p className="text-sm">Ожидаемая выручка от продажи товара:</p>
+                  <code className="text-xs bg-gray-100 p-1 rounded block mt-1">
+                    S = Обычные продажи × (Закуп + Маржа) + Rush-продажи × (Закуп + Маржа)
+                  </code>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <h5 className="font-medium text-blue-600">K (Strike Price)</h5>
+                  <p className="text-sm">Полные затраты на закупку и хранение:</p>
+                  <code className="text-xs bg-gray-100 p-1 rounded block mt-1">
+                    K = q × Закуп × (1 + r × t) + q × Хранение × Недели
+                  </code>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <h5 className="font-medium text-blue-600">σ (Volatility)</h5>
+                  <p className="text-sm">Волатильность выручки, зависит от:</p>
+                  <ul className="text-xs list-disc list-inside mt-1">
+                    <li>Вариабельности спроса (CV = σ/μ)</li>
+                    <li>Уровня сервиса (fill rate = q/спрос)</li>
+                  </ul>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <h5 className="font-medium text-blue-600">T (Time)</h5>
+                  <p className="text-sm">Время до "исполнения опциона":</p>
+                  <code className="text-xs bg-gray-100 p-1 rounded block mt-1">
+                    T = Lead Time / 52 недель
+                  </code>
+                </div>
+              </div>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold mb-2">Экономическая интерпретация</h4>
+              <div className="space-y-2">
+                <div className="flex items-start">
+                  <span className="text-green-500 mr-2">✓</span>
+                  <p className="text-sm"><strong>Если спрос &gt; q:</strong> Опцион полностью "в деньгах", продаем все единицы</p>
+                </div>
+                <div className="flex items-start">
+                  <span className="text-yellow-500 mr-2">⚠</span>
+                  <p className="text-sm"><strong>Если спрос &lt; q:</strong> Опцион частично "в деньгах", остаются непроданные единицы</p>
+                </div>
+                <div className="flex items-start">
+                  <span className="text-blue-500 mr-2">💡</span>
+                  <p className="text-sm"><strong>Rush-поставки:</strong> Дополнительная гибкость, увеличивающая ценность опциона</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gray-100 rounded-lg p-4">
+              <h4 className="font-semibold mb-2">Формула Black-Scholes для колл-опциона</h4>
+              <div className="font-mono text-sm">
+                C = S × N(d₁) - K × e^(-r×T) × N(d₂)
+              </div>
+              <div className="mt-2 text-xs">
+                где: d₁ = [ln(S/K) + (r + σ²/2)×T] / (σ×√T), d₂ = d₁ - σ×√T
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Вкладка Настройки модели */}
       {activeTab === "settings" && (
@@ -539,7 +661,7 @@ const InventoryOptionCalculator = () => {
               max={10} 
               step={0.1} 
               unit="$"
-              tooltip="Экономия на единицу товара при использовании rush-поставки вместо полной потери продажи"
+              tooltip="Дополнительные затраты на единицу товара при rush-поставке (снижение маржи)"
             />
             
             <SliderWithValue 
@@ -549,7 +671,7 @@ const InventoryOptionCalculator = () => {
               min={0} 
               max={1} 
               step={0.01}
-              tooltip="Доля отказов (lost sales), которые будут закрыты через rush-поставку"
+              tooltip="Доля lost sales, которые будут закрыты через rush-поставку"
             />
             
             <SliderWithValue 
@@ -598,8 +720,9 @@ const InventoryOptionCalculator = () => {
           <div className="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500">
             <h4 className="font-semibold text-blue-800 mb-2">Информация о модели</h4>
             <p className="text-sm text-blue-900">
-              Модель использует теорию реальных опционов для определения оптимального уровня запаса. 
-              Индивидуальные параметры товаров (цена, маржа, спрос) настраиваются для каждого SKU отдельно в разделе "Управление ассортиментом".
+              Модель использует теорию реальных опционов (Black-Scholes) для определения оптимального уровня запаса. 
+              Закупка товара рассматривается как покупка колл-опциона на будущую выручку.
+              Индивидуальные параметры товаров (цена, маржа, спрос) настраиваются для каждого SKU отдельно.
             </p>
           </div>
         </div>
@@ -615,24 +738,19 @@ const InventoryOptionCalculator = () => {
             // Расчет данных для графика
             const chartData: ChartPoint[] = [];
             const step = Math.max(1, Math.round(product.muWeek / 10));
-            const sigmaBS = calcSimpleSigmaBS(product.muWeek, product.sigmaWeek, weeks);
             
             for (let q = 0; q <= maxUnits; q += step) {
-              const expected_demand = product.muWeek * weeks;
-              const lost = Math.round(mcDemandLoss(q, product.muWeek, product.sigmaWeek, weeks));
-              
-              // ИСПРАВЛЕНО: Правильная формула обслуженного спроса
-              const served = expected_demand - lost;
-              
-              // ИСПРАВЛЕНО: Rush-экономия только если есть запас для обработки заказов
-              const rushRevenue = q > 0 ? lost * rushSave * rushProb : 0;
-              const S = served * product.margin + rushRevenue;
-              
+              const S = calculateExpectedRevenue(q, product.muWeek, product.sigmaWeek, weeks, product.purchase, product.margin, rushProb, rushSave);
               const K = q * product.purchase * (1 + r * weeks / 52) + q * hold * weeks;
               const T = weeks / 52;
-              const { optionValue } = blackScholes(S, K, T, sigmaBS, r);
+              const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q);
+              const { optionValue } = blackScholes(S, K, T, sigma, r);
               chartData.push({ q, value: optionValue });
             }
+            
+            const badgeColor = product.optQ < product.safety && product.optValue > 0 ? "bg-yellow-500 text-white" : product.optValue > 0 ? "bg-green-500 text-white" : "bg-red-500 text-white";
+            const frozenCapital = product.optQ * product.purchase;
+            const capitalInterest = product.optQ * product.purchase * r * weeks / 52;
             
             return (
               <>
@@ -673,10 +791,7 @@ const InventoryOptionCalculator = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex flex-col items-center justify-center bg-gray-100 p-3 rounded">
                         <span className="text-xs text-gray-500 mb-1">Оптимальный заказ</span>
-                        <span className={`py-1 px-2 rounded-full text-lg font-bold ${product.optQ < product.safety ? 'bg-yellow-500 text-white' : 
-                          product.optValue > 0 ? 'bg-green-500 text-white' : 
-                          'bg-red-500 text-white'
-                        }`}>
+                        <span className={`py-1 px-2 rounded-full text-lg font-bold ${badgeColor}`}>
                           {fmt(product.optQ)} шт
                         </span>
                       </div>
@@ -689,6 +804,10 @@ const InventoryOptionCalculator = () => {
                       <div className="flex flex-col items-center justify-center bg-gray-100 p-3 rounded">
                         <span className="text-xs text-gray-500 mb-1">Safety-stock</span>
                         <span className="text-lg font-bold">{fmt(product.safety)} шт</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center bg-gray-100 p-3 rounded">
+                        <span className="text-xs text-gray-500 mb-1">Замороженный капитал</span>
+                        <span className="text-lg font-bold">${fmt(frozenCapital)}</span>
                       </div>
                     </div>
                   </div>
@@ -711,12 +830,23 @@ const InventoryOptionCalculator = () => {
                         <p className="text-sm">Запас {fmt(product.optQ)} шт максимизирует прибыль.</p>
                       </div>
                     )}
+                    
+                    <div className="mt-3 text-sm">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>Оборачиваемость:</div>
+                        <div className="font-medium">{(52 / weeks).toFixed(1)}x в год</div>
+                        <div>Проценты на капитал:</div>
+                        <div className="font-medium">${fmt(capitalInterest)}</div>
+                        <div>Стоимость хранения:</div>
+                        <div className="font-medium">${fmt(product.optQ * hold * weeks)}</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 {/* График зависимости */}
                 <div className="bg-white border rounded-lg p-4">
-                  <h4 className="text-md font-semibold mb-4">Зависимость экономического эффекта от объёма заказа</h4>
+                  <h4 className="text-md font-semibold mb-4">Зависимость ценности опциона от объёма заказа</h4>
                   <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -726,11 +856,11 @@ const InventoryOptionCalculator = () => {
                           label={{ value: 'Объём заказа, шт', position: 'insideBottom', offset: -5 }}
                         />
                         <YAxis
-                          label={{ value: 'Чистый эффект, $', angle: -90, position: 'insideLeft' }}
+                          label={{ value: 'Ценность опциона, $', angle: -90, position: 'insideLeft' }}
                           tickFormatter={(value) => fmt(Number(value))}
                         />
                         <Tooltip
-                          formatter={(value) => ['$' + fmt(Number(value)), 'Чистый эффект']}
+                          formatter={(value) => ['$' + fmt(Number(value)), 'Ценность опциона']}
                           labelFormatter={(value) => `Заказ: ${value} шт`}
                         />
                         <ReferenceLine x={product.optQ} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'q*', position: 'top' }} />
