@@ -1,0 +1,5 @@
+{
+  "buildCommand": "cd stock-calculator && npm run build",
+  "outputDirectory": "stock-calculator/build",
+  "installCommand": "cd stock-calculator && npm install"
+} 
