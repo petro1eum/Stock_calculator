@@ -41,14 +41,18 @@ interface SliderWithValueProps {
 const InventoryOptionCalculator = () => {
   /* ----- входные значения ----- */
   const [maxUnits, setMaxUnits] = useState(3000); // диапазон q
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [purchase, setPurchase] = useState(8.5);  // $/шт закуп
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [margin, setMargin] = useState(15);       // $/шт маржа
   const [rushSave, setRushSave] = useState(3);    // $/шт экономия rush
   const [rushProb, setRushProb] = useState(0.2);  // вероятность rush
   const [hold, setHold] = useState(0.5);          // $/шт хранение
   const [r, setR] = useState(0.06);               // ставка капитала
   const [weeks, setWeeks] = useState(13);         // lead-time
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [muWeek, setMuWeek] = useState(800 / 13); // средн. спрос неделя
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [sigmaWeek, setSigmaWeek] = useState(0.35 * (800 / 13)); // σ спроса
   const [csl, setCsl] = useState(0.95);           // целевой CSL
 
@@ -56,6 +60,7 @@ const InventoryOptionCalculator = () => {
   const [optQ, setOptQ] = useState(0);
   const [optValue, setOptValue] = useState(0);
   const [safety, setSafety] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [series, setSeries] = useState<ChartPoint[]>([]);
   
   /* ----- ассортимент ----- */
@@ -79,13 +84,13 @@ const InventoryOptionCalculator = () => {
   });
 
   // Демо данные (загружаются по кнопке)
-  const demoProducts: Product[] = [
+  const demoProducts = useMemo((): Product[] => [
     { id: 1, name: "Товар A", sku: "SKU001", purchase: 7.5, margin: 18, muWeek: 75, sigmaWeek: 25, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
     { id: 2, name: "Товар B", sku: "SKU002", purchase: 12.0, margin: 22, muWeek: 55, sigmaWeek: 18, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
     { id: 3, name: "Товар C", sku: "SKU003", purchase: 4.2, margin: 8.5, muWeek: 130, sigmaWeek: 45, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
     { id: 4, name: "Товар D", sku: "SKU004", purchase: 18.5, margin: 35, muWeek: 25, sigmaWeek: 10, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
     { id: 5, name: "Товар E", sku: "SKU005", purchase: 5.0, margin: 12, muWeek: 95, sigmaWeek: 30, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
-  ];
+  ], []);
 
   /* ---------------- helpers ---------------- */
   const cdf = useCallback((x: number): number => {
@@ -379,8 +384,18 @@ const InventoryOptionCalculator = () => {
       setProducts(prev => [...prev, newProduct]);
     }
 
-    resetProductForm();
-  }, [productForm, products, editingProductId, generateNextId]);
+    // Reset form inline to avoid dependency issues
+    setProductForm({
+      name: "",
+      sku: generateNextSku(),
+      purchase: 0,
+      margin: 0,
+      muWeek: 0,
+      sigmaWeek: 0
+    });
+    setEditingProductId(null);
+    setShowProductForm(false);
+  }, [productForm, products, editingProductId, generateNextId, generateNextSku]);
 
   const editProduct = useCallback((product: Product) => {
     setProductForm({
@@ -404,19 +419,6 @@ const InventoryOptionCalculator = () => {
     }
   }, [selectedProduct]);
 
-  const resetProductForm = useCallback(() => {
-    setProductForm({
-      name: "",
-      sku: generateNextSku(),
-      purchase: 0,
-      margin: 0,
-      muWeek: 0,
-      sigmaWeek: 0
-    });
-    setEditingProductId(null);
-    setShowProductForm(false);
-  }, [generateNextSku]);
-
   const selectProductForAnalysis = useCallback((product: Product) => {
     setSelectedProduct(product.id);
     setActiveTab("productAnalysis");
@@ -433,10 +435,13 @@ const InventoryOptionCalculator = () => {
   }, [products, showProductForm, editingProductId, generateNextSku]);
 
   const fmt = (n: number): string => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const badgeColor = optQ < safety ? "bg-yellow-500 text-white" : optValue > 0 ? "bg-green-500 text-white" : "bg-red-500 text-white";
 
   // Расчет капитальных затрат и процентов отдельно
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const frozenCapital = optQ * purchase;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const capitalInterest = optQ * purchase * r * weeks / 52;
 
   // Компонент слайдера с полем ввода значения
@@ -897,7 +902,14 @@ const InventoryOptionCalculator = () => {
                 <button 
                   className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
                   onClick={() => {
-                    resetProductForm();
+                    setProductForm({
+                      name: "",
+                      sku: generateNextSku(),
+                      purchase: 0,
+                      margin: 0,
+                      muWeek: 0,
+                      sigmaWeek: 0
+                    });
                     setShowProductForm(true);
                   }}
                 >
@@ -1009,7 +1021,18 @@ const InventoryOptionCalculator = () => {
                   </button>
                   <button 
                     className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-                    onClick={resetProductForm}
+                    onClick={() => {
+                      setProductForm({
+                        name: "",
+                        sku: generateNextSku(),
+                        purchase: 0,
+                        margin: 0,
+                        muWeek: 0,
+                        sigmaWeek: 0
+                      });
+                      setEditingProductId(null);
+                      setShowProductForm(false);
+                    }}
                   >
                     Отмена
                   </button>
@@ -1024,7 +1047,14 @@ const InventoryOptionCalculator = () => {
                 <button 
                   className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 mr-2"
                   onClick={() => {
-                    resetProductForm();
+                    setProductForm({
+                      name: "",
+                      sku: generateNextSku(),
+                      purchase: 0,
+                      margin: 0,
+                      muWeek: 0,
+                      sigmaWeek: 0
+                    });
                     setShowProductForm(true);
                   }}
                 >
