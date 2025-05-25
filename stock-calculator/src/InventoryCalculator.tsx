@@ -35,6 +35,8 @@ interface Product {
   minOrderQty?: number;       // Минимальный размер заказа
   maxStorageQty?: number;     // Максимальная вместимость склада
   volumeDiscounts?: VolumeDiscount[];  // Скидки за объем
+  currentStock?: number;      // ДОБАВЛЕНО: Текущий запас на складе
+  seasonality?: SeasonalityData; // ДОБАВЛЕНО: Данные о сезонности
 }
 
 interface ProductWithCategory extends Product {
@@ -59,6 +61,13 @@ interface SliderWithValueProps {
   step: number;
   tooltip?: string;
   unit?: string;
+}
+
+// ДОБАВЛЕНО: Интерфейс для сезонности
+interface SeasonalityData {
+  enabled: boolean;
+  monthlyFactors: number[]; // 12 месяцев, коэффициенты спроса (1.0 = обычный спрос)
+  currentMonth: number; // Текущий месяц (0-11)
 }
 
 const InventoryOptionCalculator = () => {
@@ -115,6 +124,14 @@ const InventoryOptionCalculator = () => {
     minOrderQty: 0,
     maxStorageQty: 0,
     volumeDiscounts: [] as VolumeDiscount[]
+  });
+
+  // ДОБАВЛЕНО: Состояние для параметров Monte Carlo - перемещено выше для использования в mcDemandLoss
+  const [monteCarloParams, setMonteCarloParams] = useState({
+    iterations: 1000,
+    showAdvanced: false,
+    confidenceLevel: 0.95,
+    randomSeed: null as number | null
   });
 
   // Демо данные (загружаются по кнопке)
@@ -175,8 +192,27 @@ const InventoryOptionCalculator = () => {
     if (S <= 1e-6 || K <= 1e-6) return { optionValue: Math.max(0, S - K) };
     if (sigma <= 1e-6) return { optionValue: Math.max(0, S - K) };
     
+    // ДОБАВЛЕНО: Для случаев глубоко "в деньгах" (S >> K) используем упрощенную формулу
+    // чтобы избежать численных проблем с очень большими значениями d1
+    const ratio = S / K;
+    if (ratio > 3) {
+      // Опцион глубоко "в деньгах", его ценность ≈ S - K*e^(-rT)
+      return { optionValue: S - K * Math.exp(-r * T) };
+    }
+    
     const d1 = (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
     const d2 = d1 - sigma * Math.sqrt(T);
+    
+    // ДОБАВЛЕНО: Проверка на экстремальные значения d1 и d2
+    if (d1 > 10) {
+      // N(d1) ≈ 1, N(d2) ≈ 1
+      return { optionValue: S - K * Math.exp(-r * T) };
+    }
+    if (d1 < -10) {
+      // N(d1) ≈ 0, N(d2) ≈ 0
+      return { optionValue: 0 };
+    }
+    
     return {
       optionValue: S * cdf(d1) - K * Math.exp(-r * T) * cdf(d2),
     };
@@ -187,20 +223,35 @@ const InventoryOptionCalculator = () => {
     const mean = muWeek * weeks;
     const std = sigmaWeek * Math.sqrt(weeks);
     
-    // УЛУЧШЕНО: Адаптивное количество итераций в зависимости от волатильности
+    // УЛУЧШЕНО: Используем настраиваемое количество итераций или адаптивное
     const cv = sigmaWeek / Math.max(muWeek, 1); // Коэффициент вариации
-    const adaptiveTrials = trials || Math.max(1000, Math.ceil(5000 * cv)); // Больше итераций для высокой волатильности
+    const defaultTrials = Math.max(1000, Math.ceil(5000 * cv)); // Больше итераций для высокой волатильности
+    const actualTrials = trials || monteCarloParams.iterations || defaultTrials;
+    
+    console.log('mcDemandLoss вызван с итерациями:', actualTrials, 'из параметров:', monteCarloParams.iterations);
     
     let lostSum = 0;
-    for (let i = 0; i < adaptiveTrials; i++) {
-      const u1 = Math.random(), u2 = Math.random();
+    
+    // ДОБАВЛЕНО: Возможность использовать фиксированный seed для воспроизводимости
+    let rng = Math.random;
+    if (monteCarloParams.randomSeed !== null) {
+      // Простой генератор псевдослучайных чисел с seed
+      let seed = monteCarloParams.randomSeed;
+      rng = () => {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      };
+    }
+    
+    for (let i = 0; i < actualTrials; i++) {
+      const u1 = rng(), u2 = rng();
       const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
       // Округляем demand до целого числа - мы работаем со штуками
       const demand = Math.round(Math.max(0, mean + std * z));
       lostSum += Math.max(0, demand - units);
     }
-    return lostSum / adaptiveTrials;
-  }, []);
+    return lostSum / actualTrials;
+  }, [monteCarloParams]);
 
   // Расчет эффективной цены закупки с учетом скидок за объем
   const getEffectivePurchasePrice = useCallback((basePrice: number, quantity: number, volumeDiscounts?: VolumeDiscount[]): number => {
@@ -221,33 +272,49 @@ const InventoryOptionCalculator = () => {
 
   // ИСПРАВЛЕНО: Расчет ожидаемой выручки (S - spot price)
   const calculateExpectedRevenue = useCallback((q: number, muWeek: number, sigmaWeek: number, weeks: number, purchase: number, margin: number, rushProb: number, rushSave: number): number => {
+    // Если ничего не заказали, то и продать нечего
+    if (q === 0) return 0;
+    
     // Ожидаемый спрос за период
     const expectedDemand = muWeek * weeks;
-    
-    // Рассчитываем потерянные продажи через Monte Carlo
-    const lost = mcDemandLoss(q, muWeek, sigmaWeek, weeks);
-    
-    // ИСПРАВЛЕНО: Правильный расчет продаж через обычный канал
-    // Если запас (q) меньше ожидаемого спроса, то продаем весь запас минус потери
-    // Если запас больше спроса, то продаем только то, что есть спрос
-    const normalSales = Math.min(q, expectedDemand) - Math.min(lost, q);
-    
-    // Продано через rush-поставки (с вероятностью rushProb)
-    const rushSales = lost * rushProb;
+    const demandStd = sigmaWeek * Math.sqrt(weeks);
     
     // Полная цена продажи
     const fullPrice = purchase + margin;
     
-    // Rush-продажи идут по полной цене, но нам обходятся дороже на rushSave
-    // Экономия rushSave означает, что rush-поставка дороже обычной на эту сумму
-    // Поэтому маржа от rush-продажи = margin - rushSave
-    const rushRevenue = rushSales * fullPrice;
+    // УПРОЩЕННАЯ ЛОГИКА:
+    // 1. Рассчитываем ожидаемые продажи = min(запас, спрос)
+    // 2. Учитываем стохастичность спроса
     
-    // ИСПРАВЛЕНО: S = полная выручка от всех продаж
-    const S = normalSales * fullPrice + rushRevenue;
+    let expectedSales: number;
     
-    return S;
-  }, [mcDemandLoss]);
+    if (q >= expectedDemand + 3 * demandStd) {
+      // Запас очень большой, продажи = ожидаемый спрос
+      expectedSales = expectedDemand;
+    } else {
+      // Используем формулу для ожидаемых продаж при ограниченном запасе
+      // E[min(q, D)] где D ~ N(μ, σ²)
+      
+      const z = (q - expectedDemand) / demandStd;
+      const phi_z = Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI); // PDF
+      const Phi_z = cdf(z); // CDF
+      
+      // Формула: E[min(q, D)] = q * Φ(z) + μ * (1 - Φ(z)) - σ * φ(z)
+      expectedSales = q * Phi_z + expectedDemand * (1 - Phi_z) - demandStd * phi_z;
+      
+      // Убеждаемся, что продажи не отрицательные и не больше запаса
+      expectedSales = Math.max(0, Math.min(q, expectedSales));
+    }
+    
+    // Рассчитываем потерянные продажи для rush-заказов
+    const lost = mcDemandLoss(q, muWeek, sigmaWeek, weeks);
+    const rushSales = lost * rushProb;
+    
+    // Общая выручка = обычные продажи + rush продажи
+    const totalRevenue = expectedSales * fullPrice + rushSales * fullPrice;
+    
+    return totalRevenue;
+  }, [mcDemandLoss, cdf]);
 
   // ИСПРАВЛЕНО: Расчет волатильности для Black-Scholes
   const calculateVolatility = useCallback((muWeek: number, sigmaWeek: number, weeks: number, q: number): number => {
@@ -307,6 +374,8 @@ const InventoryOptionCalculator = () => {
 
   // ИСПРАВЛЕНО: Рассчитываем оптимальные параметры для текущего товара
   useEffect(() => {
+    console.log('Пересчет оптимальных параметров. Monte Carlo итераций:', monteCarloParams.iterations);
+    
     // safety-stock
     const z = invNorm(csl);
     setSafety(Math.ceil(z * sigmaWeek * Math.sqrt(weeks)));
@@ -341,10 +410,12 @@ const InventoryOptionCalculator = () => {
     setOptQ(bestQ);
     setOptValue(bestNet);
     setSeries(pts);
-  }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, blackScholes, calculateExpectedRevenue, calculateVolatility, invNorm]);
+  }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, blackScholes, calculateExpectedRevenue, calculateVolatility, invNorm, monteCarloParams]);
 
   // ИСПРАВЛЕНО: Рассчитываем оптимальные параметры для всего ассортимента
   const productsWithMetrics = useMemo(() => {
+    console.log('Пересчет productsWithMetrics. Monte Carlo итераций:', monteCarloParams.iterations);
+    
     return products.map(product => {
       const z = invNorm(csl);
       const productSafety = Math.ceil(z * product.sigmaWeek * Math.sqrt(weeks));
@@ -391,7 +462,7 @@ const InventoryOptionCalculator = () => {
         safety: productSafety
       };
     });
-  }, [products, rushSave, rushProb, hold, r, weeks, csl, blackScholes, calculateExpectedRevenue, calculateVolatility, invNorm, maxUnits, getEffectivePurchasePrice]);
+  }, [products, rushSave, rushProb, hold, r, weeks, csl, blackScholes, calculateExpectedRevenue, calculateVolatility, invNorm, maxUnits, getEffectivePurchasePrice, monteCarloParams]);
 
   // ABC-анализ с использованием продуктов с рассчитанными метриками
   const abcAnalysisResult = useMemo(() => {
@@ -491,7 +562,9 @@ const InventoryOptionCalculator = () => {
       shelfLife: productForm.shelfLife || undefined,
       minOrderQty: productForm.minOrderQty || undefined,
       maxStorageQty: productForm.maxStorageQty || undefined,
-      volumeDiscounts: productForm.volumeDiscounts.length > 0 ? productForm.volumeDiscounts : undefined
+      volumeDiscounts: productForm.volumeDiscounts.length > 0 ? productForm.volumeDiscounts : undefined,
+      currentStock: 0,
+      seasonality: { enabled: false, monthlyFactors: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], currentMonth: 0 }
     };
 
     if (editingProductId) {
@@ -530,7 +603,9 @@ const InventoryOptionCalculator = () => {
       shelfLife: product.shelfLife || 0,
       minOrderQty: product.minOrderQty || 0,
       maxStorageQty: product.maxStorageQty || 0,
-      volumeDiscounts: product.volumeDiscounts || []
+      volumeDiscounts: product.volumeDiscounts || [],
+      currentStock: product.currentStock,
+      seasonality: product.seasonality
     });
     setEditingProductId(product.id);
     setShowProductForm(true);
@@ -736,7 +811,9 @@ const InventoryOptionCalculator = () => {
           revenue: 0,
           optQ: 0,
           optValue: 0,
-          safety: 0
+          safety: 0,
+          currentStock: 0,
+          seasonality: { enabled: false, monthlyFactors: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], currentMonth: 0 }
         };
         
         product.revenue = product.muWeek * (product.purchase + product.margin) * 52;
@@ -1000,18 +1077,38 @@ const InventoryOptionCalculator = () => {
             const product = productsWithMetrics.find(p => p.id === selectedProduct);
             if (!product) return <p>Товар не найден</p>;
             
-            // Расчет данных для графика
+            // Расчет данных для графика с оптимальным количеством точек
             const chartData: ChartPoint[] = [];
-            const step = Math.max(1, Math.round(product.muWeek / 10));
+            // Используем адаптивный шаг: больше точек вокруг оптимума, меньше по краям
+            const targetPoints = 50; // Целевое количество точек на графике
+            const step = Math.max(10, Math.round(maxUnits / targetPoints));
             
             for (let q = 0; q <= maxUnits; q += step) {
-              const S = calculateExpectedRevenue(q, product.muWeek, product.sigmaWeek, weeks, product.purchase, product.margin, rushProb, rushSave);
-              const K = q * product.purchase * (1 + r * weeks / 52) + q * hold * weeks;
+              const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
+              const S = calculateExpectedRevenue(q, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
+              const K = q * effectivePurchase * (1 + r * weeks / 52) + q * hold * weeks;
               const T = weeks / 52;
               const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q);
               const { optionValue } = blackScholes(S, K, T, sigma, r);
               chartData.push({ q, value: optionValue });
             }
+            
+            // Добавляем ключевые точки если их нет
+            const keyPoints = [product.optQ, product.safety];
+            keyPoints.forEach(keyPoint => {
+              if (!chartData.find(point => Math.abs(point.q - keyPoint) < step / 2)) {
+                const effectivePurchase = getEffectivePurchasePrice(product.purchase, keyPoint, product.volumeDiscounts);
+                const S = calculateExpectedRevenue(keyPoint, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
+                const K = keyPoint * effectivePurchase * (1 + r * weeks / 52) + keyPoint * hold * weeks;
+                const T = weeks / 52;
+                const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, keyPoint);
+                const { optionValue } = blackScholes(S, K, T, sigma, r);
+                chartData.push({ q: keyPoint, value: optionValue });
+              }
+            });
+            
+            // Сортируем по q для корректного отображения линии
+            chartData.sort((a, b) => a.q - b.q);
             
             const badgeColor = product.optQ < product.safety && product.optValue > 0 ? "bg-yellow-500 text-white" : product.optValue > 0 ? "bg-green-500 text-white" : "bg-red-500 text-white";
             const frozenCapital = product.optQ * product.purchase;
@@ -1132,6 +1229,23 @@ const InventoryOptionCalculator = () => {
                   </div>
                 </div>
 
+                {/* Важное замечание о модели */}
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+                  <h5 className="font-semibold text-blue-800 mb-2">📊 Как читать этот анализ</h5>
+                  <div className="text-sm text-blue-900 space-y-2">
+                    <p><strong>Модель предполагает:</strong></p>
+                    <ul className="list-disc list-inside ml-2 space-y-1">
+                      <li>Вы начинаете с <strong>нулевых остатков</strong> (весь старый товар продан)</li>
+                      <li>Вы принимаете решение о размере <strong>нового заказа</strong></li>
+                      <li>Этот заказ будет продаваться в течение <strong>{weeks} недель</strong></li>
+                      <li>Спрос составит примерно <strong>{fmt(product.muWeek * weeks)} штук</strong> за период</li>
+                    </ul>
+                    <p className="mt-2 text-xs italic">
+                      Если у вас есть текущие остатки на складе, учтите их при принятии решения о заказе.
+                    </p>
+                  </div>
+                </div>
+
                 {/* Калькулятор "Что если" */}
                 {(() => {
                   // Используем локальное состояние для количества текущего товара
@@ -1221,12 +1335,153 @@ const InventoryOptionCalculator = () => {
                   );
                 })()}
 
+                {/* ДОБАВЛЕНО: Настройки Monte Carlo */}
+                <div className="bg-white border rounded-lg p-4 mb-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-md font-semibold">Настройки прогнозирования (Monte Carlo)</h4>
+                    <button
+                      onClick={() => setMonteCarloParams(prev => ({ ...prev, showAdvanced: !prev.showAdvanced }))}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      {monteCarloParams.showAdvanced ? 'Скрыть дополнительные' : 'Показать дополнительные'}
+                    </button>
+                  </div>
+                  
+                  <div className="text-sm text-gray-600 mb-4">
+                    Модель симулирует тысячи сценариев спроса для расчета ожидаемых продаж и потерь.
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Количество симуляций
+                        <span className="ml-2 text-xs text-gray-500">
+                          (больше = точнее, но медленнее)
+                        </span>
+                      </label>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => {
+                            console.log('Меняю итерации на 100');
+                            setMonteCarloParams(prev => ({ ...prev, iterations: 100 }));
+                          }}
+                          className={`px-3 py-1 rounded ${monteCarloParams.iterations === 100 ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                        >
+                          Быстро (100)
+                        </button>
+                        <button
+                          onClick={() => setMonteCarloParams(prev => ({ ...prev, iterations: 1000 }))}
+                          className={`px-3 py-1 rounded ${monteCarloParams.iterations === 1000 ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                        >
+                          Нормально (1,000)
+                        </button>
+                        <button
+                          onClick={() => setMonteCarloParams(prev => ({ ...prev, iterations: 5000 }))}
+                          className={`px-3 py-1 rounded ${monteCarloParams.iterations === 5000 ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                        >
+                          Точно (5,000)
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Текущие настройки
+                      </label>
+                      <div className="bg-gray-100 p-3 rounded text-sm">
+                        <div>Симуляций: <span className="font-bold">{monteCarloParams.iterations.toLocaleString()}</span></div>
+                        <div>Распределение спроса: <span className="font-bold">Нормальное</span></div>
+                        <div>Средний спрос за период: <span className="font-bold">{fmt(product.muWeek * weeks)}</span></div>
+                        <div>Станд. откл. за период: <span className="font-bold">{fmt(product.sigmaWeek * Math.sqrt(weeks))}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {monteCarloParams.showAdvanced && (
+                    <div className="mt-4 pt-4 border-t">
+                      <h5 className="font-medium mb-3">Дополнительные настройки</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Доверительный интервал
+                          </label>
+                          <select
+                            value={monteCarloParams.confidenceLevel}
+                            onChange={(e) => setMonteCarloParams(prev => ({ ...prev, confidenceLevel: parseFloat(e.target.value) }))}
+                            className="w-full p-2 border border-gray-300 rounded"
+                          >
+                            <option value="0.90">90%</option>
+                            <option value="0.95">95%</option>
+                            <option value="0.99">99%</option>
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Для расчета интервалов прогноза
+                          </p>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Фиксированный seed (для воспроизводимости)
+                          </label>
+                          <div className="flex space-x-2">
+                            <input
+                              type="number"
+                              value={monteCarloParams.randomSeed || ''}
+                              onChange={(e) => setMonteCarloParams(prev => ({ 
+                                ...prev, 
+                                randomSeed: e.target.value ? parseInt(e.target.value) : null 
+                              }))}
+                              placeholder="Случайный"
+                              className="flex-1 p-2 border border-gray-300 rounded"
+                            />
+                            <button
+                              onClick={() => setMonteCarloParams(prev => ({ ...prev, randomSeed: null }))}
+                              className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                            >
+                              Сброс
+                            </button>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Оставьте пустым для случайных результатов
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-500">
+                        <h6 className="font-medium text-yellow-800 mb-1">Влияние на расчеты</h6>
+                        <ul className="text-xs text-yellow-900 space-y-1">
+                          <li>• Больше симуляций = стабильнее результаты между запусками</li>
+                          <li>• Фиксированный seed = одинаковые результаты при одинаковых параметрах</li>
+                          <li>• Доверительный интервал влияет на расчет safety stock</li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      onClick={() => {
+                        toast.success('Настройки Monte Carlo обновлены. Все расчеты будут пересчитаны с новыми параметрами.');
+                      }}
+                      className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                    >
+                      Применить и пересчитать
+                    </button>
+                  </div>
+                </div>
+
                 {/* График зависимости */}
                 <div className="bg-white border rounded-lg p-4">
                   <h4 className="text-md font-semibold mb-2">График анализа прибыльности</h4>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Показывает, сколько вы заработаете при разных объемах заказа
-                  </p>
+                  <div className="text-sm text-gray-600 mb-4 space-y-1">
+                    <p>Показывает чистую прибыль при разных объемах заказа с учетом:</p>
+                    <ul className="list-disc list-inside ml-2 text-xs">
+                      <li>Выручки от продаж (обычных и экстренных)</li>
+                      <li>Минус: затраты на закупку товара</li>
+                      <li>Минус: затраты на хранение</li>
+                      <li>Минус: проценты на замороженный капитал</li>
+                    </ul>
+                  </div>
                   <div className="h-96">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData} margin={{ top: 20, right: 30, left: 40, bottom: 60 }}>
@@ -1254,26 +1509,48 @@ const InventoryOptionCalculator = () => {
                         />
                         
                         {/* Зона убытков */}
-                        <ReferenceLine y={0} stroke="#ef4444" strokeWidth={2} />
+                        <ReferenceLine y={0} stroke="#ef4444" strokeWidth={2} strokeDasharray="2 2" />
                         
                         {/* Оптимальное количество */}
                         <ReferenceLine 
                           x={product.optQ} 
                           stroke="#f59e0b" 
-                          strokeWidth={2}
-                          strokeDasharray="5 5"
+                          strokeWidth={3}
+                          strokeDasharray="8 4"
                         >
-                          <Label value={`Оптимум: ${fmt(product.optQ)} шт`} position="top" offset={10} style={{ fontSize: 12, fill: '#f59e0b' }} />
+                          <Label 
+                            value={`Оптимум: ${fmt(product.optQ)} шт`} 
+                            position="top" 
+                            offset={15} 
+                            style={{ 
+                              fontSize: 14, 
+                              fill: '#f59e0b', 
+                              fontWeight: 'bold',
+                              backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                              padding: '4px 8px',
+                              borderRadius: '4px'
+                            }} 
+                          />
                         </ReferenceLine>
                         
                         {/* Страховой запас */}
                         <ReferenceLine 
                           x={product.safety} 
                           stroke="#3b82f6" 
-                          strokeWidth={1}
-                          strokeDasharray="3 3"
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
                         >
-                          <Label value={`Мин. запас: ${fmt(product.safety)} шт`} position="bottom" offset={10} style={{ fontSize: 12, fill: '#3b82f6' }} />
+                          <Label 
+                            value={`Мин. запас: ${fmt(product.safety)} шт`} 
+                            position="bottom" 
+                            offset={15} 
+                            style={{ 
+                              fontSize: 12, 
+                              fill: '#3b82f6',
+                              fontWeight: 'bold',
+                              backgroundColor: 'rgba(255, 255, 255, 0.8)'
+                            }} 
+                          />
                         </ReferenceLine>
                         
                         {/* Основная линия */}
@@ -1281,9 +1558,11 @@ const InventoryOptionCalculator = () => {
                           type="monotone" 
                           dataKey="value" 
                           stroke="#10b981" 
-                          strokeWidth={3}
+                          strokeWidth={2}
                           fill="url(#colorValue)"
-                          activeDot={{ r: 6, fill: '#10b981' }} 
+                          activeDot={{ r: 6, fill: '#10b981' }}
+                          dot={false}
+                          connectNulls={false}
                         />
                       </LineChart>
                     </ResponsiveContainer>
