@@ -1,11 +1,11 @@
 import React from 'react';
 import './App.css';
-import InventoryCalculator from './InventoryCalculator';
+import InventoryOptionCalculator from './InventoryCalculator';
 
 function App() {
   return (
     <div className="App">
-      <InventoryCalculator />
+      <InventoryOptionCalculator />
     </div>
   );
 }
