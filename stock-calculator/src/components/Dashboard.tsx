@@ -11,15 +11,34 @@ import {
 } from '@heroicons/react/24/outline';
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
+import { Product, ProductWithCategory } from '../types';
+import ChartComponent from './ChartComponent';
 
 interface DashboardProps {
-  products: any[];
+  products: Product[];
+  productsWithMetrics: ProductWithCategory[];
   totalOptimalStock: number;
   totalOptionValue: number;
+  series: Array<{
+    qty: number;
+    revenue: number;
+    cost: number;
+    profit: number;
+    optionValue: number;
+  }>;
+  selectedProductId: number | null;
   onNavigate: (tab: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ products, totalOptimalStock, totalOptionValue, onNavigate }) => {
+const Dashboard: React.FC<DashboardProps> = ({ 
+  products, 
+  productsWithMetrics,
+  totalOptimalStock, 
+  totalOptionValue, 
+  series,
+  selectedProductId,
+  onNavigate 
+}) => {
   const totalInvestment = products.reduce((sum, p) => sum + p.optQ * p.purchase, 0);
   const avgROI = totalInvestment > 0 ? (totalOptionValue / totalInvestment) * 100 : 0;
   const criticalProducts = products.filter(p => p.optValue < 0).length;
@@ -278,6 +297,16 @@ const Dashboard: React.FC<DashboardProps> = ({ products, totalOptimalStock, tota
             </div>
           )}
         </div>
+      </motion.div>
+
+      {/* Графики и аналитика */}
+      <motion.div variants={itemVariants}>
+        <ChartComponent
+          products={products}
+          productsWithMetrics={productsWithMetrics}
+          series={series}
+          selectedProductId={selectedProductId}
+        />
       </motion.div>
     </motion.div>
   );

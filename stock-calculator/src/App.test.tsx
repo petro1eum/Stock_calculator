@@ -4,6 +4,6 @@ import App from './App';
 
 test('renders inventory optimizer title', () => {
   render(<App />);
-  const titleElement = screen.getByText(/Опционный анализ запаса/i);
+  const titleElement = screen.getByText(/StockOptim/i);
   expect(titleElement).toBeInTheDocument();
 });
