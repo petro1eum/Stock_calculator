@@ -20,7 +20,7 @@ interface ProductAnalysisTabProps {
   // Функции для расчетов
   getEffectivePurchasePrice: (basePrice: number, quantity: number, volumeDiscounts?: any[]) => number;
   calculateExpectedRevenueWrapper: (q: number, muWeek: number, sigmaWeek: number, weeks: number, purchase: number, margin: number, rushProb: number, rushSave: number) => number;
-  calculateVolatility: (muWeek: number, sigmaWeek: number, weeks: number, q: number) => number;
+  calculateVolatility: (muWeek: number, sigmaWeek: number, weeks: number, q: number, rushProb?: number, currency?: string, supplier?: string) => number;
   blackScholesCall: (S: number, K: number, T: number, sigma: number, r: number) => { optionValue: number };
   exportToCSV: () => void;
   monteCarloParams: MonteCarloParams;
@@ -70,7 +70,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
       const S = calculateExpectedRevenueWrapper(q, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
       const K = q * effectivePurchase * (1 + r * weeks / 52) + q * hold * weeks;
       const T = weeks / 52;
-      const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q);
+      const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q, rushProb, product.currency, product.supplier);
       const { optionValue } = blackScholesCall(S, K, T, sigma, r);
       data.push({ q, value: optionValue });
     }
@@ -83,7 +83,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
         const S = calculateExpectedRevenueWrapper(keyPoint, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
         const K = keyPoint * effectivePurchase * (1 + r * weeks / 52) + keyPoint * hold * weeks;
         const T = weeks / 52;
-        const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, keyPoint);
+        const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, keyPoint, rushProb, product.currency, product.supplier);
         const { optionValue } = blackScholesCall(S, K, T, sigma, r);
         data.push({ q: keyPoint, value: optionValue });
       }
@@ -106,7 +106,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
     const S = calculateExpectedRevenueWrapper(q, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
     const K = q * effectivePurchase * (1 + r * weeks / 52) + q * hold * weeks;
     const T = weeks / 52;
-    const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q);
+    const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q, rushProb, product.currency, product.supplier);
     const { optionValue } = blackScholesCall(S, K, T, sigma, r);
     
     return {

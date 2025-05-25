@@ -28,6 +28,7 @@ interface DashboardProps {
   }>;
   selectedProductId: number | null;
   onNavigate: (tab: string) => void;
+  calcMethodUsed?: 'closed' | 'mc';
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -37,7 +38,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   totalOptionValue, 
   series,
   selectedProductId,
-  onNavigate 
+  onNavigate,
+  calcMethodUsed
 }) => {
   const totalInvestment = products.reduce((sum, p) => sum + p.optQ * p.purchase, 0);
   const avgROI = totalInvestment > 0 ? (totalOptionValue / totalInvestment) * 100 : 0;
@@ -119,6 +121,19 @@ const Dashboard: React.FC<DashboardProps> = ({
       <motion.div variants={itemVariants} className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-8 text-white shadow-xl">
         <h1 className="text-3xl font-bold mb-2">Панель управления запасами</h1>
         <p className="text-blue-100">Мониторинг и оптимизация вашего ассортимента в реальном времени</p>
+        {calcMethodUsed && (
+          <div className="mt-4 inline-flex items-center space-x-2 bg-white/15 backdrop-blur px-3 py-2 rounded-lg">
+            <span className="text-xs uppercase tracking-wide text-blue-50">Как мы считаем сейчас</span>
+            <span className={`text-xs font-semibold px-2 py-1 rounded ${calcMethodUsed === 'mc' ? 'bg-indigo-500/60' : 'bg-green-500/60'}`}>
+              {calcMethodUsed === 'mc' ? 'Monte Carlo' : 'Закрытая формула'}
+            </span>
+            <span className="text-xs text-blue-50">
+              {calcMethodUsed === 'mc' 
+                ? 'Прогоняем много маленьких историй, чтобы учесть случайность.' 
+                : 'Считаем по готовой формуле — быстро и точно для обычных случаев.'}
+            </span>
+          </div>
+        )}
       </motion.div>
 
       {/* Key Metrics */}

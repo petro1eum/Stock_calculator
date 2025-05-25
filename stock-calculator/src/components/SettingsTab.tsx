@@ -1,5 +1,6 @@
 import React from 'react';
 import SliderWithValue from './SliderWithValue';
+import { MonteCarloParams } from '../types';
 
 interface SettingsTabProps {
   maxUnits: number;
@@ -16,6 +17,8 @@ interface SettingsTabProps {
   setRushSave: (value: number) => void;
   csl: number;
   setCsl: (value: number) => void;
+  monteCarloParams?: MonteCarloParams;
+  setMonteCarloParams?: React.Dispatch<React.SetStateAction<MonteCarloParams>>;
 }
 
 const SettingsTab: React.FC<SettingsTabProps> = ({
@@ -25,7 +28,9 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
   hold, setHold,
   rushProb, setRushProb,
   rushSave, setRushSave,
-  csl, setCsl
+  csl, setCsl,
+  monteCarloParams,
+  setMonteCarloParams
 }) => {
   return (
     <div className="bg-white rounded-lg shadow-md p-4">
@@ -115,6 +120,49 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
       
       <div className="mt-6 space-y-4">
+        {monteCarloParams && setMonteCarloParams && (
+          <div className="p-4 bg-indigo-50 border-l-4 border-indigo-500 rounded">
+            <h4 className="font-semibold text-indigo-800 mb-2">Метод расчета ожидаемых величин</h4>
+            <div className="flex items-center space-x-4 text-sm text-indigo-900">
+              <label className="inline-flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="calcMethod"
+                  checked={(monteCarloParams.method ?? 'closed') === 'closed'}
+                  onChange={() => setMonteCarloParams(prev => ({ ...prev, method: 'closed' }))}
+                />
+                <span>Закрытая формула (быстро, точно при нормальном спросе)</span>
+              </label>
+              <label className="inline-flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="calcMethod"
+                  checked={monteCarloParams.method === 'mc'}
+                  onChange={() => setMonteCarloParams(prev => ({ ...prev, method: 'mc' }))}
+                />
+                <span>Monte Carlo (универсально, дольше)</span>
+              </label>
+              <label className="inline-flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="calcMethod"
+                  checked={monteCarloParams.method === 'auto'}
+                  onChange={() => setMonteCarloParams(prev => ({ ...prev, method: 'auto' }))}
+                />
+                <span>Авто (по CV и сезонности)</span>
+              </label>
+            </div>
+            <div className="mt-2 text-xs text-indigo-700">
+              <p className="mb-1"><strong>Рекомендации:</strong></p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>Выбирайте <strong>Закрытую формулу</strong> при нормальном распределении спроса — быстро и стабильно.</li>
+                <li><strong>Monte Carlo</strong> используйте при высокой волатильности, сложной сезонности или нетипичном распределении.</li>
+                <li>Порог для авто-режима: <strong>CV &gt; 100%</strong> — модель переключается на Monte Carlo.</li>
+                <li>Число симуляций влияет на точность и скорость. 1,000 — сбалансированный вариант.</li>
+              </ul>
+            </div>
+          </div>
+        )}
         <div className="p-4 bg-blue-50 border-l-4 border-blue-500">
           <h4 className="font-semibold text-blue-800 mb-2">Разделение параметров</h4>
           <div className="text-sm text-blue-900 space-y-2">

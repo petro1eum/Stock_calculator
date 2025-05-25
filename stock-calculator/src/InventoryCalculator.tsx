@@ -9,6 +9,7 @@ import ProductAnalysisTab from "./components/ProductAnalysisTab";
 import ExportImportTab from "./components/ExportImportTab";
 import ABCAnalysisTab from "./components/ABCAnalysisTab";
 import ScenariosTab from "./components/ScenariosTab";
+import PortfolioSettingsTab from "./components/PortfolioSettingsTab";
 
 // Импорт типов
 import { 
@@ -31,7 +32,8 @@ import {
   getEffectivePurchasePrice,
   calculateExpectedRevenue,
   calculateVolatility,
-  getAverageSeasonalDemand
+  getAverageSeasonalDemand,
+  optimizeQuantity
 } from "./utils/inventoryCalculations";
 
 const InventoryOptionCalculator = () => {
@@ -49,10 +51,8 @@ const InventoryOptionCalculator = () => {
   const [margin] = useState(15);       // $/шт маржа
   const [muWeek] = useState(800 / 13); // средн. спрос неделя
   const [sigmaWeek] = useState(0.35 * (800 / 13)); // σ спроса
-  const [optQ, setOptQ] = useState(0);
-  const [optValue, setOptValue] = useState(0);
-  const [safety, setSafety] = useState(0);
   const [series, setSeries] = useState<ChartPoint[]>([]);
+  const [calcMethodUsed, setCalcMethodUsed] = useState<'closed' | 'mc'>('closed');
   
   /* ----- ассортимент ----- */
   const [products, setProducts] = useState<Product[]>([]);
@@ -92,26 +92,75 @@ const InventoryOptionCalculator = () => {
       enabled: false,
       monthlyFactors: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
       currentMonth: new Date().getMonth()
-    }
+    },
+    currency: 'RUB',
+    supplier: 'domestic',
+    category: '',
+    volume: undefined
   });
 
   // Состояние для параметров Monte Carlo
-  const [monteCarloParams, setMonteCarloParams] = useState<MonteCarloParams>({
-    iterations: 1000,
-    showAdvanced: false,
-    confidenceLevel: 0.95,
-    randomSeed: null
+  const [monteCarloParams, setMonteCarloParams] = useState<MonteCarloParams>(() => {
+    let savedMethod: 'closed' | 'mc' | null = null;
+    try {
+      if (typeof window !== 'undefined') {
+        const v = window.localStorage.getItem('calcMethod');
+        if (v === 'closed' || v === 'mc') savedMethod = v;
+      }
+    } catch {}
+    return {
+      iterations: 1000,
+      showAdvanced: false,
+      confidenceLevel: 0.95,
+      randomSeed: null,
+      method: savedMethod ?? 'closed'
+    };
   });
+
+  // Сохраняем выбор метода в localStorage
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('calcMethod', monteCarloParams.method ?? 'closed');
+      }
+    } catch {}
+  }, [monteCarloParams.method]);
 
 
 
   // Демо данные
   const demoProducts = useMemo((): Product[] => [
-    { id: 1, name: "Товар A", sku: "SKU001", purchase: 7.5, margin: 18, muWeek: 75, sigmaWeek: 25, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
-    { id: 2, name: "Товар B", sku: "SKU002", purchase: 12.0, margin: 22, muWeek: 55, sigmaWeek: 18, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
-    { id: 3, name: "Товар C", sku: "SKU003", purchase: 4.2, margin: 8.5, muWeek: 130, sigmaWeek: 45, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
-    { id: 4, name: "Товар D", sku: "SKU004", purchase: 18.5, margin: 35, muWeek: 25, sigmaWeek: 10, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
-    { id: 5, name: "Товар E", sku: "SKU005", purchase: 5.0, margin: 12, muWeek: 95, sigmaWeek: 30, revenue: 0, optQ: 0, optValue: 0, safety: 0 },
+    { 
+      id: 1, name: "iPhone 15 Case", sku: "SKU001", purchase: 7.5, margin: 18, 
+      muWeek: 75, sigmaWeek: 25, revenue: 0, optQ: 0, optValue: 0, safety: 0,
+      currency: 'USD', supplier: 'china', category: 'Электроника', volume: 0.001
+    },
+    { 
+      id: 2, name: "Samsung TV 55\"", sku: "SKU002", purchase: 12.0, margin: 22, 
+      muWeek: 55, sigmaWeek: 18, revenue: 0, optQ: 0, optValue: 0, safety: 0,
+      currency: 'EUR', supplier: 'europe', category: 'Электроника', volume: 0.15
+    },
+    { 
+      id: 3, name: "Футболка Uniqlo", sku: "SKU003", purchase: 4.2, margin: 8.5, 
+      muWeek: 130, sigmaWeek: 45, revenue: 0, optQ: 0, optValue: 0, safety: 0,
+      currency: 'CNY', supplier: 'china', category: 'Одежда', volume: 0.002,
+      seasonality: { 
+        enabled: true, 
+        monthlyFactors: [0.5, 0.5, 0.8, 1.2, 1.5, 2.0, 2.0, 1.8, 1.2, 0.8, 0.5, 0.5],
+        currentMonth: new Date().getMonth()
+      }
+    },
+    { 
+      id: 4, name: "Кофемашина DeLonghi", sku: "SKU004", purchase: 18.5, margin: 35, 
+      muWeek: 25, sigmaWeek: 10, revenue: 0, optQ: 0, optValue: 0, safety: 0,
+      currency: 'RUB', supplier: 'domestic', category: 'Бытовая техника', volume: 0.05
+    },
+    { 
+      id: 5, name: "Наушники Sony WH-1000XM5", sku: "SKU005", purchase: 5.0, margin: 12, 
+      muWeek: 95, sigmaWeek: 30, revenue: 0, optQ: 0, optValue: 0, safety: 0,
+      currency: 'USD', supplier: 'usa', category: 'Электроника', volume: 0.003,
+      minOrderQty: 10, maxStorageQty: 500
+    },
   ], []);
 
   // ABC-анализ ассортимента
@@ -157,27 +206,30 @@ const InventoryOptionCalculator = () => {
     console.log('Пересчет оптимальных параметров. Monte Carlo итераций:', monteCarloParams.iterations);
     
     const z = inverseNormal(csl);
-    setSafety(Math.ceil(z * sigmaWeek * Math.sqrt(weeks)));
+    const calculatedSafety = Math.ceil(z * sigmaWeek * Math.sqrt(weeks));
 
-    let bestQ = 0, bestNet = -Infinity;
-    const pts = [];
     const step = Math.max(1, Math.round(muWeek / 10));
-    
-    for (let q = 0; q <= maxUnits; q += step) {
+    const evaluateQ = (q: number) => {
       const S = calculateExpectedRevenueWrapper(q, muWeek, sigmaWeek, weeks, purchase, margin, rushProb, rushSave);
       const K = q * purchase * (1 + r * weeks / 52) + q * hold * weeks;
       const T = weeks / 52;
-      const sigma = calculateVolatility(muWeek, sigmaWeek, weeks, q);
+      const sigma = calculateVolatility(muWeek, sigmaWeek, weeks, q, rushProb);
       const { optionValue } = blackScholesCall(S, K, T, sigma, r);
-      
-      if (optionValue > bestNet) { 
-        bestNet = optionValue; 
-        bestQ = q; 
-      }
-      pts.push({ q, value: optionValue });
+      return optionValue;
+    };
+    const { bestQ, bestValue: bestNet } = optimizeQuantity(0, maxUnits, step, evaluateQ);
+    const pts = [] as { q: number; value: number }[];
+    for (let q = 0; q <= maxUnits; q += step) {
+      pts.push({ q, value: evaluateQ(q) });
     }
-    setOptQ(bestQ);
-    setOptValue(bestNet);
+    // Эти значения не используются нигде в приложении, поэтому просто логируем для отладки
+    // Фиксируем, какой метод был применен фактически
+    const expectedDemand = muWeek * weeks;
+    const demandStd = sigmaWeek * Math.sqrt(weeks);
+    const cv = expectedDemand > 0 ? demandStd / expectedDemand : 0;
+    const method = (monteCarloParams.method === 'mc' || (monteCarloParams.method === 'auto' && cv > 1.0)) ? 'mc' : 'closed';
+    setCalcMethodUsed(method);
+    console.log('Оптимальные параметры: Q =', bestQ, ', Value =', bestNet, ', Safety =', calculatedSafety, ', Method =', method);
     setSeries(pts);
   }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, calculateExpectedRevenueWrapper, monteCarloParams]);
 
@@ -192,9 +244,7 @@ const InventoryOptionCalculator = () => {
       const seasonalMuWeek = getAverageSeasonalDemand(product.muWeek, product.seasonality, weeks);
       const productSafety = Math.ceil(z * product.sigmaWeek * Math.sqrt(weeks));
       
-      let bestQ = 0, bestNet = -Infinity;
       const step = Math.max(1, Math.round(seasonalMuWeek / 10));
-      
       const minQ = product.minOrderQty || 0;
       const maxQ = product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits;
       
@@ -202,23 +252,18 @@ const InventoryOptionCalculator = () => {
       if (product.shelfLife && product.shelfLife > 0) {
         effectiveWeeks = Math.min(weeks, product.shelfLife);
       }
-      
       const currentStock = product.currentStock || 0;
-      
-      for (let q = minQ; q <= maxQ; q += step) {
+      const evaluateQ2 = (q: number) => {
         const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
         const totalInventory = q + currentStock;
         const S = calculateExpectedRevenueWrapper(totalInventory, seasonalMuWeek, product.sigmaWeek, effectiveWeeks, effectivePurchase, product.margin, rushProb, rushSave);
         const K = q * effectivePurchase * (1 + r * effectiveWeeks / 52) + q * hold * effectiveWeeks;
         const T = effectiveWeeks / 52;
-        const sigma = calculateVolatility(seasonalMuWeek, product.sigmaWeek, effectiveWeeks, totalInventory);
+        const sigma = calculateVolatility(seasonalMuWeek, product.sigmaWeek, effectiveWeeks, totalInventory, rushProb, product.currency, product.supplier);
         const { optionValue } = blackScholesCall(S, K, T, sigma, r);
-        
-        if (optionValue > bestNet) { 
-          bestNet = optionValue; 
-          bestQ = q; 
-        }
-      }
+        return optionValue;
+      };
+      let { bestQ, bestValue: bestNet } = optimizeQuantity(minQ, maxQ, step, evaluateQ2);
       
       if (product.minOrderQty && bestQ < product.minOrderQty) {
         bestQ = product.minOrderQty;
@@ -332,7 +377,11 @@ const InventoryOptionCalculator = () => {
       maxStorageQty: productForm.maxStorageQty || undefined,
       volumeDiscounts: productForm.volumeDiscounts.length > 0 ? productForm.volumeDiscounts : undefined,
       currentStock: productForm.currentStock || 0,
-      seasonality: productForm.seasonality
+      seasonality: productForm.seasonality,
+      currency: productForm.currency,
+      supplier: productForm.supplier,
+      category: productForm.category,
+      volume: productForm.volume
     };
 
     if (editingProductId) {
@@ -360,7 +409,11 @@ const InventoryOptionCalculator = () => {
         enabled: false,
         monthlyFactors: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         currentMonth: new Date().getMonth()
-      }
+      },
+      currency: 'RUB',
+      supplier: 'domestic',
+      category: '',
+      volume: undefined
     });
     setEditingProductId(null);
     setShowProductForm(false);
@@ -383,7 +436,11 @@ const InventoryOptionCalculator = () => {
         enabled: false,
         monthlyFactors: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         currentMonth: new Date().getMonth()
-      }
+      },
+      currency: product.currency || 'RUB',
+      supplier: product.supplier || 'domestic',
+      category: product.category || '',
+      volume: product.volume
     });
     setEditingProductId(product.id);
     setShowProductForm(true);
@@ -424,7 +481,9 @@ const InventoryOptionCalculator = () => {
     }
     
     const headers = ['SKU', 'Название', 'Закупочная цена', 'Маржа', 'Средний спрос/нед', 'Станд. откл./нед', 
-                     'Срок годности (нед)', 'Мин. заказ', 'Макс. склад', 'Оптим. заказ', 'Ценность опциона', 'Safety-stock'];
+                     'Срок годности (нед)', 'Мин. заказ', 'Макс. склад', 'Валюта', 'Поставщик', 'Категория', 
+                     'Объем', 'Текущий запас', 'Сезонность включена', 'Сезонные факторы', 'Текущий месяц',
+                     'Оптим. заказ', 'Ценность опциона', 'Safety-stock'];
     
     const data = productsWithMetrics.map(p => [
       p.sku,
@@ -436,14 +495,29 @@ const InventoryOptionCalculator = () => {
       p.shelfLife || '',
       p.minOrderQty || '',
       p.maxStorageQty || '',
+      p.currency || 'RUB',
+      p.supplier || 'domestic',
+      p.category || '',
+      p.volume || '',
+      p.currentStock || 0,
+      p.seasonality?.enabled ? 'да' : 'нет',
+      p.seasonality?.monthlyFactors?.join(';') || '',
+      p.seasonality?.currentMonth || '',
       p.optQ,
       p.optValue.toFixed(2),
       p.safety
     ]);
     
-    const csvContent = [headers, ...data].map(e => e.join(',')).join('\n');
+    const csvContent = [headers, ...data].map(e => e.map(cell => {
+      // Экранируем значения, содержащие запятые или кавычки
+      const cellStr = String(cell);
+      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+        return `"${cellStr.replace(/"/g, '""')}"`;
+      }
+      return cellStr;
+    }).join(',')).join('\n');
     
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
@@ -452,6 +526,8 @@ const InventoryOptionCalculator = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    
+    toast.success('Данные экспортированы в CSV');
   }, [products, productsWithMetrics]);
 
   const importFromCSV = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -461,8 +537,8 @@ const InventoryOptionCalculator = () => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
-      const lines = text.split('\n');
-      const header = lines[0].split(',');
+      const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+      const header = lines[0].split(',').map(h => h.trim());
       
       if (!header.includes('SKU') || !header.includes('Название')) {
         toast.error('Неверный формат файла. Убедитесь, что первая строка содержит заголовки колонок.');
@@ -471,31 +547,80 @@ const InventoryOptionCalculator = () => {
       
       const newProducts: Product[] = [];
       
+      // Функция для парсинга CSV строки с учетом кавычек
+      const parseCSVLine = (line: string): string[] => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          
+          if (char === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+              current += '"';
+              i++;
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ',' && !inQuotes) {
+            result.push(current);
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        
+        result.push(current);
+        return result;
+      };
+      
+      // Создаем индексы колонок
+      const indices: { [key: string]: number } = {};
+      header.forEach((col, index) => {
+        indices[col] = index;
+      });
+      
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
         
-        const values = line.split(',');
+        const values = parseCSVLine(line);
         if (values.length < 6) continue;
         
         const product: Product = {
           id: generateNextId() + i - 1,
-          sku: values[0] || generateNextSku(),
-          name: values[1] || 'Без названия',
-          purchase: parseFloat(values[2]) || 0,
-          margin: parseFloat(values[3]) || 0,
-          muWeek: parseFloat(values[4]) || 0,
-          sigmaWeek: parseFloat(values[5]) || 0,
-          shelfLife: values[6] ? parseFloat(values[6]) : undefined,
-          minOrderQty: values[7] ? parseFloat(values[7]) : undefined,
-          maxStorageQty: values[8] ? parseFloat(values[8]) : undefined,
+          sku: values[indices['SKU']] || generateNextSku(),
+          name: values[indices['Название']] || 'Без названия',
+          purchase: parseFloat(values[indices['Закупочная цена']]) || 0,
+          margin: parseFloat(values[indices['Маржа']]) || 0,
+          muWeek: parseFloat(values[indices['Средний спрос/нед']]) || 0,
+          sigmaWeek: parseFloat(values[indices['Станд. откл./нед']]) || 0,
+          shelfLife: values[indices['Срок годности (нед)']] ? parseFloat(values[indices['Срок годности (нед)']]) : undefined,
+          minOrderQty: values[indices['Мин. заказ']] ? parseFloat(values[indices['Мин. заказ']]) : undefined,
+          maxStorageQty: values[indices['Макс. склад']] ? parseFloat(values[indices['Макс. склад']]) : undefined,
+          currency: (values[indices['Валюта']] || 'RUB') as 'RUB' | 'USD' | 'EUR' | 'CNY',
+          supplier: (values[indices['Поставщик']] || 'domestic') as 'domestic' | 'china' | 'europe' | 'usa',
+          category: values[indices['Категория']] || '',
+          volume: values[indices['Объем']] ? parseFloat(values[indices['Объем']]) : undefined,
+          currentStock: parseFloat(values[indices['Текущий запас']] || '0') || 0,
           revenue: 0,
           optQ: 0,
           optValue: 0,
           safety: 0,
-          currentStock: 0,
-          seasonality: { enabled: false, monthlyFactors: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], currentMonth: 0 }
+          seasonality: {
+            enabled: values[indices['Сезонность включена']] === 'да',
+            monthlyFactors: values[indices['Сезонные факторы']] 
+              ? values[indices['Сезонные факторы']].split(';').map(f => parseFloat(f) || 1)
+              : [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            currentMonth: parseInt(values[indices['Текущий месяц']] || '0') || new Date().getMonth()
+          }
         };
+        
+        // Убедимся, что у нас есть 12 факторов сезонности
+        if (product.seasonality && product.seasonality.monthlyFactors.length !== 12) {
+          product.seasonality.monthlyFactors = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+        }
         
         product.revenue = product.muWeek * (product.purchase + product.margin) * 52;
         newProducts.push(product);
@@ -540,6 +665,7 @@ const InventoryOptionCalculator = () => {
             }))}
             selectedProductId={selectedProductId}
             onNavigate={setActiveTab}
+            calcMethodUsed={calcMethodUsed}
           />
         )}
         
@@ -561,6 +687,8 @@ const InventoryOptionCalculator = () => {
             setRushSave={setRushSave}
             csl={csl}
             setCsl={setCsl}
+            monteCarloParams={monteCarloParams}
+            setMonteCarloParams={setMonteCarloParams}
           />
         )}
         
@@ -631,6 +759,10 @@ const InventoryOptionCalculator = () => {
             csl={csl}
             monteCarloParams={monteCarloParams}
           />
+        )}
+        
+        {activeTab === "portfolioSettings" && (
+          <PortfolioSettingsTab />
         )}
         
       </SimpleLayout>

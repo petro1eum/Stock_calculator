@@ -1,6 +1,8 @@
 import React from 'react';
-import { Product } from '../types';
+import { Product, SalesRecord, PurchaseRecord, LogisticsRecord } from '../types';
+import { parseSalesCSV, parseSalesXLSX, updateProductsFromSales } from '../utils/inventoryCalculations';
 import toast from 'react-hot-toast';
+import { usePortfolioSettings } from '../contexts/PortfolioSettingsContext';
 
 interface ExportImportTabProps {
   products: Product[];
@@ -17,6 +19,8 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
   exportToCSV,
   importFromCSV
 }) => {
+  const portfolioSettings = usePortfolioSettings();
+
   const exportToJSON = () => {
     if (products.length === 0) {
       toast.error('Нет данных для экспорта');
@@ -24,16 +28,21 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     }
     
     const exportData = {
-      version: '1.0',
+      version: '2.0',
       exportDate: new Date().toISOString(),
       products: productsWithMetrics.map(p => ({
         ...p,
-        // Исключаем вычисляемые поля при экспорте
         optQ: undefined,
         optValue: undefined,
         safety: undefined,
         revenue: undefined
-      }))
+      })),
+      portfolioSettings: portfolioSettings ? {
+        currencies: portfolioSettings.currencies,
+        suppliers: portfolioSettings.suppliers,
+        categories: portfolioSettings.categories,
+        correlationRules: portfolioSettings.correlationRules
+      } : undefined
     };
     
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -46,7 +55,46 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     link.click();
     document.body.removeChild(link);
     
-    toast.success('Данные экспортированы в JSON');
+    toast.success('Данные экспортированы в JSON (включая настройки портфеля)');
+  };
+
+  const importSalesCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const sales = parseSalesCSV(text);
+        if (sales.length === 0) {
+          toast.error('Не удалось распознать продажи из CSV');
+          return;
+        }
+        setProducts(prev => updateProductsFromSales(prev, sales, { weeksWindow: 26 }));
+        toast.success(`Импортировано записей продаж: ${sales.length}. Параметры спроса пересчитаны.`);
+      } catch {
+        toast.error('Ошибка при чтении файла продаж');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
+  const importSalesXLSX = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const sales = await parseSalesXLSX(file);
+      if (sales.length === 0) {
+        toast.error('Не удалось распознать продажи из Excel');
+        return;
+      }
+      setProducts(prev => updateProductsFromSales(prev, sales, { weeksWindow: 26 }));
+      toast.success(`Импортировано записей продаж (Excel): ${sales.length}. Параметры спроса пересчитаны.`);
+    } catch {
+      toast.error('Ошибка при чтении Excel файла продаж');
+    }
+    event.target.value = '';
   };
 
   const importFromJSON = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -80,16 +128,39 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
           shelfLife: p.shelfLife,
           minOrderQty: p.minOrderQty,
           maxStorageQty: p.maxStorageQty,
-          volumeDiscounts: p.volumeDiscounts
+          volumeDiscounts: p.volumeDiscounts,
+          currency: p.currency || 'RUB',
+          supplier: p.supplier || 'domestic',
+          category: p.category || '',
+          volume: p.volume,
+          salesHistory: p.salesHistory as SalesRecord[] | undefined,
+          purchaseHistory: p.purchaseHistory as PurchaseRecord[] | undefined,
+          logisticsHistory: p.logisticsHistory as LogisticsRecord[] | undefined
         }));
         
-        // Пересчитываем revenue
         importedProducts.forEach(p => {
           p.revenue = p.muWeek * (p.purchase + p.margin) * 52;
         });
         
         setProducts(importedProducts);
-        toast.success(`Импортировано ${importedProducts.length} товаров`);
+        
+        if (data.portfolioSettings && portfolioSettings) {
+          if (data.portfolioSettings.currencies) {
+            portfolioSettings.setCurrencies(data.portfolioSettings.currencies);
+          }
+          if (data.portfolioSettings.suppliers) {
+            portfolioSettings.setSuppliers(data.portfolioSettings.suppliers);
+          }
+          if (data.portfolioSettings.categories) {
+            portfolioSettings.setCategories(data.portfolioSettings.categories);
+          }
+          if (data.portfolioSettings.correlationRules) {
+            portfolioSettings.setCorrelationRules(data.portfolioSettings.correlationRules);
+          }
+          toast.success(`Импортировано ${importedProducts.length} товаров и настройки портфеля`);
+        } else {
+          toast.success(`Импортировано ${importedProducts.length} товаров`);
+        }
       } catch (error) {
         toast.error('Ошибка при чтении файла');
       }
@@ -100,12 +171,12 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
   };
 
   const generateSampleCSV = () => {
-    const headers = 'SKU,Название,Закупочная цена,Маржа,Средний спрос/нед,Станд. откл./нед,Срок годности (нед),Мин. заказ,Макс. склад';
+    const headers = 'SKU,Название,Закупочная цена,Маржа,Средний спрос/нед,Станд. откл./нед,Срок годности (нед),Мин. заказ,Макс. склад,Валюта,Поставщик,Категория,Объем,Текущий запас,Сезонность включена,"Сезонные факторы (через ;)",Текущий месяц';
     const sample = [
       headers,
-      'SKU001,Товар A,7.5,18,75,25,,,',
-      'SKU002,Товар B,12.0,22,55,18,52,10,500',
-      'SKU003,Товар C,4.2,8.5,130,45,26,,1000'
+      'SKU001,iPhone 15 Case,7.5,18,75,25,,,USD,china,Электроника,0.001,0,нет,,',
+      'SKU002,Samsung TV 55",12.0,22,55,18,52,10,500,EUR,europe,Электроника,0.15,0,нет,,',
+      'SKU003,Футболка Uniqlo,4.2,8.5,130,45,26,,1000,CNY,china,Одежда,0.002,50,да,"0.5;0.5;0.8;1.2;1.5;2.0;2.0;1.8;1.2;0.8;0.5;0.5",6'
     ].join('\n');
     
     const blob = new Blob([sample], { type: 'text/csv;charset=utf-8;' });
@@ -163,7 +234,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         {products.length > 0 && (
           <div className="mt-4 p-4 bg-blue-50 rounded-lg">
             <p className="text-sm text-blue-800">
-              <strong>Совет:</strong> JSON формат сохраняет все данные включая сезонность, скидки за объем и другие расширенные параметры.
+              <strong>Совет:</strong> JSON формат сохраняет все данные включая сезонность, скидки за объем, настройки валют, поставщиков, категорий и правила корреляции товаров.
             </p>
           </div>
         )}
@@ -180,7 +251,10 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
           <div className="border border-gray-200 rounded-lg p-4">
             <h4 className="font-medium mb-2">Импорт из CSV</h4>
             <p className="text-sm text-gray-600 mb-4">
-              Базовый импорт товаров из таблицы
+              Базовый импорт товаров из таблицы. Также поддерживаются CSV с историей:
+              <br/>• Продажи: <code>date,sku,units,revenue</code>
+              <br/>• Закупки: <code>date,sku,quantity,unitCost,currency,exchangeRateToRUB</code>
+              <br/>• Логистика: <code>date,sku,cost,currency,exchangeRateToRUB</code>
             </p>
             <input
               type="file"
@@ -195,6 +269,33 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
             >
               📥 Выбрать CSV файл
             </label>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={importSalesCSV}
+                  className="hidden"
+                  id="sales-import"
+                />
+                <label htmlFor="sales-import" className="block w-full text-center px-4 py-2 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 cursor-pointer">
+                  📈 Импортировать продажи (CSV)
+                </label>
+                <p className="text-xs text-gray-500 mt-1">Пересчитывает спрос (μ/σ) за 26 недель</p>
+              </div>
+              <div>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={importSalesXLSX}
+                  className="hidden"
+                  id="sales-import-xlsx"
+                />
+                <label htmlFor="sales-import-xlsx" className="block w-full text-center px-4 py-2 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 cursor-pointer">
+                  📊 Импортировать продажи (Excel)
+                </label>
+              </div>
+            </div>
             <button
               onClick={generateSampleCSV}
               className="mt-2 w-full px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
@@ -260,6 +361,18 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
               {products.filter(p => p.currentStock && p.currentStock > 0).length}
             </div>
             <div className="text-sm text-gray-600">С запасами</div>
+          </div>
+          <div className="text-center p-4 bg-gray-50 rounded-lg">
+            <div className="text-2xl font-bold text-gray-800">
+              {products.filter(p => p.currency && p.currency !== 'RUB').length}
+            </div>
+            <div className="text-sm text-gray-600">В валюте</div>
+          </div>
+          <div className="text-center p-4 bg-gray-50 rounded-lg">
+            <div className="text-2xl font-bold text-gray-800">
+              {products.filter(p => p.supplier && p.supplier !== 'domestic').length}
+            </div>
+            <div className="text-sm text-gray-600">Импорт</div>
           </div>
         </div>
       </div>

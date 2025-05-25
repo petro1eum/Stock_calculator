@@ -1,11 +1,14 @@
 import React from 'react';
 import './App.css';
 import InventoryOptionCalculator from './InventoryCalculator';
+import { PortfolioSettingsProvider } from './contexts/PortfolioSettingsContext';
 
 function App() {
   return (
     <div className="App">
-      <InventoryOptionCalculator />
+      <PortfolioSettingsProvider>
+        <InventoryOptionCalculator />
+      </PortfolioSettingsProvider>
     </div>
   );
 }

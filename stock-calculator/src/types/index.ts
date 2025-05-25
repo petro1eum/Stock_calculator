@@ -35,6 +35,15 @@ export interface Product {
   volumeDiscounts?: VolumeDiscount[];
   currentStock?: number;
   seasonality?: SeasonalityData;
+  // Новые поля для портфельной оптимизации
+  currency?: string;
+  supplier?: string;
+  category?: string;
+  volume?: number; // объем единицы товара для складских расчетов
+  // История продаж/закупок/логистики (опционально)
+  salesHistory?: SalesRecord[];
+  purchaseHistory?: PurchaseRecord[];
+  logisticsHistory?: LogisticsRecord[];
 }
 
 export interface ProductWithCategory extends Product {
@@ -66,6 +75,33 @@ export interface MonteCarloParams {
   showAdvanced: boolean;
   confidenceLevel: number;
   randomSeed: number | null;
+  // Метод расчета ожиданий: закрытая форма (по умолчанию) или Монте-Карло
+  method?: 'closed' | 'mc' | 'auto';
+}
+
+// Исторические записи
+export interface SalesRecord {
+  date: string; // ISO дата
+  sku: string;
+  units: number; // штук
+  revenue?: number; // выручка в базовой валюте
+}
+
+export interface PurchaseRecord {
+  date: string; // ISO дата
+  sku: string;
+  quantity: number;
+  unitCost: number; // цена за единицу в исходной валюте
+  currency?: 'RUB' | 'USD' | 'EUR' | 'CNY' | string;
+  exchangeRateToRUB?: number; // если указано — используем для конвертации
+}
+
+export interface LogisticsRecord {
+  date: string; // ISO дата
+  sku: string;
+  cost: number; // стоимость логистики
+  currency?: 'RUB' | 'USD' | 'EUR' | 'CNY' | string;
+  exchangeRateToRUB?: number;
 }
 
 export interface ProductForm {
@@ -81,4 +117,9 @@ export interface ProductForm {
   volumeDiscounts: VolumeDiscount[];
   currentStock: number;
   seasonality: SeasonalityData;
+  // Новые поля для портфельной оптимизации
+  currency?: string;
+  supplier?: string;
+  category?: string;
+  volume?: number;
 } 
