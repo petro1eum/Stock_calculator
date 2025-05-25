@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
+// Импорт математических функций для возможности их использования и тестирования
+// import { normalCDF, inverseNormal, blackScholesCall, calculateExpectedRevenue as calcRevenue, calculateVolatility as calcVol } from './mathFunctions';
+
 // TypeScript interfaces
 interface ChartPoint {
   q: number;
@@ -149,18 +152,23 @@ const InventoryOptionCalculator = () => {
   }, [cdf]);
 
   // Monte-Carlo ожидание lost-sales при запасе q
-  const mcDemandLoss = useCallback((units: number, muWeek: number, sigmaWeek: number, weeks: number, trials: number = 1000): number => {
+  const mcDemandLoss = useCallback((units: number, muWeek: number, sigmaWeek: number, weeks: number, trials?: number): number => {
     const mean = muWeek * weeks;
     const std = sigmaWeek * Math.sqrt(weeks);
+    
+    // УЛУЧШЕНО: Адаптивное количество итераций в зависимости от волатильности
+    const cv = sigmaWeek / Math.max(muWeek, 1); // Коэффициент вариации
+    const adaptiveTrials = trials || Math.max(1000, Math.ceil(5000 * cv)); // Больше итераций для высокой волатильности
+    
     let lostSum = 0;
-    for (let i = 0; i < trials; i++) {
+    for (let i = 0; i < adaptiveTrials; i++) {
       const u1 = Math.random(), u2 = Math.random();
       const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
       // Округляем demand до целого числа - мы работаем со штуками
       const demand = Math.round(Math.max(0, mean + std * z));
       lostSum += Math.max(0, demand - units);
     }
-    return lostSum / trials;
+    return lostSum / adaptiveTrials;
   }, []);
 
   // ИСПРАВЛЕНО: Расчет ожидаемой выручки (S - spot price)
@@ -171,8 +179,10 @@ const InventoryOptionCalculator = () => {
     // Рассчитываем потерянные продажи через Monte Carlo
     const lost = mcDemandLoss(q, muWeek, sigmaWeek, weeks);
     
-    // Продано через обычный канал
-    const normalSales = Math.min(q, Math.max(0, expectedDemand - lost));
+    // ИСПРАВЛЕНО: Правильный расчет продаж через обычный канал
+    // Если запас (q) меньше ожидаемого спроса, то продаем весь запас минус потери
+    // Если запас больше спроса, то продаем только то, что есть спрос
+    const normalSales = Math.min(q, expectedDemand) - Math.min(lost, q);
     
     // Продано через rush-поставки (с вероятностью rushProb)
     const rushSales = lost * rushProb;
@@ -209,10 +219,10 @@ const InventoryOptionCalculator = () => {
     // Если q << expectedDemand, то волатильность выручки меньше
     const fillRate = Math.min(1, q / expectedDemand);
     
-    // Эмпирическая формула для волатильности выручки
-    // При fillRate = 1, волатильность максимальна
-    // При fillRate → 0, волатильность → 0
-    const revenueVolatility = cvDemand * Math.sqrt(fillRate);
+    // УЛУЧШЕНО: Более точная модель, учитывающая нелинейность
+    // При низком fillRate волатильность выручки приближается к 0
+    // При высоком fillRate волатильность выручки приближается к волатильности спроса
+    const revenueVolatility = cvDemand * (1 - Math.exp(-2 * fillRate));
     
     // Минимальная волатильность для численной стабильности
     return Math.max(0.01, revenueVolatility);
@@ -361,6 +371,42 @@ const InventoryOptionCalculator = () => {
     const existingSku = products.find(p => p.sku === productForm.sku && p.id !== editingProductId);
     if (existingSku) {
       alert('SKU уже существует. Используйте другой SKU.');
+      return;
+    }
+
+    // ДОБАВЛЕНО: Валидация параметров продукта
+    const validationErrors: string[] = [];
+    
+    if (productForm.purchase <= 0) {
+      validationErrors.push('Закупочная цена должна быть положительной');
+    }
+    
+    if (productForm.margin <= 0) {
+      validationErrors.push('Маржа должна быть положительной');
+    }
+    
+    const marginRate = productForm.margin / productForm.purchase;
+    if (marginRate < 0.1 && productForm.purchase > 0) {
+      validationErrors.push('Слишком низкая рентабельность (< 10%)');
+    }
+    
+    if (productForm.muWeek <= 0) {
+      validationErrors.push('Средний спрос должен быть положительным');
+    }
+    
+    if (productForm.sigmaWeek < 0) {
+      validationErrors.push('Стандартное отклонение не может быть отрицательным');
+    }
+    
+    if (productForm.muWeek > 0) {
+      const cv = productForm.sigmaWeek / productForm.muWeek;
+      if (cv > 2) {
+        validationErrors.push('Слишком высокая волатильность спроса (CV > 200%)');
+      }
+    }
+    
+    if (validationErrors.length > 0) {
+      alert('Ошибки валидации:\n\n' + validationErrors.join('\n'));
       return;
     }
 
