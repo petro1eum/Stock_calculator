@@ -20,6 +20,7 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
     { id: 'productAnalysis', name: 'Анализ', disabled: productsCount === 0 },
     { id: 'abc', name: 'ABC-анализ', disabled: productsCount === 0 },
     { id: 'scenarios', name: 'Сценарии', disabled: productsCount === 0 },
+    { id: 'portfolioSettings', name: 'Портфель' },
     { id: 'export', name: 'Данные' },
     { id: 'theory', name: 'Теория' },
   ];

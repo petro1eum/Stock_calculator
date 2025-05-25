@@ -35,6 +35,11 @@ export interface Product {
   volumeDiscounts?: VolumeDiscount[];
   currentStock?: number;
   seasonality?: SeasonalityData;
+  // Новые поля для портфельной оптимизации
+  currency?: string;
+  supplier?: string;
+  category?: string;
+  volume?: number; // объем единицы товара для складских расчетов
 }
 
 export interface ProductWithCategory extends Product {
@@ -81,4 +86,9 @@ export interface ProductForm {
   volumeDiscounts: VolumeDiscount[];
   currentStock: number;
   seasonality: SeasonalityData;
+  // Новые поля для портфельной оптимизации
+  currency?: string;
+  supplier?: string;
+  category?: string;
+  volume?: number;
 } 

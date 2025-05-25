@@ -59,10 +59,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="product-name" className="block text-sm font-medium text-gray-700 mb-1">
                 Название товара
               </label>
               <input
+                id="product-name"
                 type="text"
                 value={productForm.name}
                 onChange={(e) => setProductForm(prev => ({ ...prev, name: e.target.value }))}
@@ -71,10 +72,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="product-sku" className="block text-sm font-medium text-gray-700 mb-1">
                 SKU (артикул)
               </label>
               <input
+                id="product-sku"
                 type="text"
                 value={productForm.sku}
                 onChange={(e) => setProductForm(prev => ({ ...prev, sku: e.target.value }))}
@@ -83,10 +85,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="product-purchase" className="block text-sm font-medium text-gray-700 mb-1">
                 Закупочная цена, $
               </label>
               <input
+                id="product-purchase"
                 type="number"
                 step="0.01"
                 value={productForm.purchase}
@@ -95,10 +98,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="product-margin" className="block text-sm font-medium text-gray-700 mb-1">
                 Маржа (прибыль с единицы), $
               </label>
               <input
+                id="product-margin"
                 type="number"
                 step="0.01"
                 value={productForm.margin}
@@ -107,10 +111,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="product-demand" className="block text-sm font-medium text-gray-700 mb-1">
                 Средний спрос, шт/нед
               </label>
               <input
+                id="product-demand"
                 type="number"
                 step="0.1"
                 value={productForm.muWeek}
@@ -119,10 +124,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="product-deviation" className="block text-sm font-medium text-gray-700 mb-1">
                 Стандартное отклонение спроса, шт/нед
               </label>
               <input
+                id="product-deviation"
                 type="number"
                 step="0.1"
                 value={productForm.sigmaWeek}
@@ -131,11 +137,12 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="product-stock" className="block text-sm font-medium text-gray-700 mb-1">
                 Текущий запас на складе, шт
                 <span className="text-xs text-gray-500 ml-1">(необязательно)</span>
               </label>
               <input
+                id="product-stock"
                 type="number"
                 value={productForm.currentStock}
                 onChange={(e) => setProductForm(prev => ({ ...prev, currentStock: parseInt(e.target.value) || 0 }))}
@@ -149,10 +156,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
             <h4 className="font-medium text-gray-700">Дополнительные ограничения (необязательно)</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="product-shelf-life" className="block text-sm font-medium text-gray-700 mb-1">
                   Срок годности, недель
                 </label>
                 <input
+                  id="product-shelf-life"
                   type="number"
                   value={productForm.shelfLife}
                   onChange={(e) => setProductForm(prev => ({ ...prev, shelfLife: parseInt(e.target.value) || 0 }))}
@@ -160,10 +168,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="product-min-order" className="block text-sm font-medium text-gray-700 mb-1">
                   Минимальный заказ, шт
                 </label>
                 <input
+                  id="product-min-order"
                   type="number"
                   value={productForm.minOrderQty}
                   onChange={(e) => setProductForm(prev => ({ ...prev, minOrderQty: parseInt(e.target.value) || 0 }))}
@@ -171,14 +180,78 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="product-max-storage" className="block text-sm font-medium text-gray-700 mb-1">
                   Максимум на складе, шт
                 </label>
                 <input
+                  id="product-max-storage"
                   type="number"
                   value={productForm.maxStorageQty}
                   onChange={(e) => setProductForm(prev => ({ ...prev, maxStorageQty: parseInt(e.target.value) || 0 }))}
                   className="w-full p-2 border border-gray-300 rounded"
+                />
+              </div>
+            </div>
+            
+            {/* Новые поля для портфельной оптимизации */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label htmlFor="product-currency" className="block text-sm font-medium text-gray-700 mb-1">
+                  Валюта закупки
+                </label>
+                <select
+                  id="product-currency"
+                  value={productForm.currency || 'RUB'}
+                  onChange={(e) => setProductForm(prev => ({ ...prev, currency: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded"
+                >
+                  <option value="RUB">RUB (₽)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="CNY">CNY (¥)</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="product-supplier" className="block text-sm font-medium text-gray-700 mb-1">
+                  Поставщик
+                </label>
+                <select
+                  id="product-supplier"
+                  value={productForm.supplier || 'domestic'}
+                  onChange={(e) => setProductForm(prev => ({ ...prev, supplier: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded"
+                >
+                  <option value="domestic">Российский</option>
+                  <option value="china">Китай</option>
+                  <option value="europe">Европа</option>
+                  <option value="usa">США</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="product-category" className="block text-sm font-medium text-gray-700 mb-1">
+                  Категория товара
+                </label>
+                <input
+                  id="product-category"
+                  type="text"
+                  value={productForm.category || ''}
+                  onChange={(e) => setProductForm(prev => ({ ...prev, category: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded"
+                  placeholder="Например: Электроника"
+                />
+              </div>
+              <div>
+                <label htmlFor="product-volume" className="block text-sm font-medium text-gray-700 mb-1">
+                  Объем единицы (м³)
+                </label>
+                <input
+                  id="product-volume"
+                  type="number"
+                  step="0.001"
+                  value={productForm.volume || ''}
+                  onChange={(e) => setProductForm(prev => ({ ...prev, volume: parseFloat(e.target.value) || undefined }))}
+                  className="w-full p-2 border border-gray-300 rounded"
+                  placeholder="0.01"
                 />
               </div>
             </div>
@@ -246,10 +319,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
               {productForm.seasonality.enabled && (
                 <div>
                   <div className="mb-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="current-month" className="block text-sm font-medium text-gray-700 mb-1">
                       Текущий месяц
                     </label>
                     <select
+                      id="current-month"
                       value={productForm.seasonality.currentMonth}
                       onChange={(e) => setProductForm(prev => ({
                         ...prev,
@@ -268,8 +342,9 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                     {['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 
                       'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'].map((month, index) => (
                       <div key={index}>
-                        <label className="block text-xs text-gray-600">{month}</label>
+                        <label htmlFor={`month-${index}`} className="block text-xs text-gray-600">{month}</label>
                         <input
+                          id={`month-${index}`}
                           type="number"
                           step="0.1"
                           min="0"
@@ -314,7 +389,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                     enabled: false,
                     monthlyFactors: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                     currentMonth: new Date().getMonth()
-                  }
+                  },
+                  currency: 'RUB',
+                  supplier: 'domestic',
+                  category: '',
+                  volume: undefined
                 });
                 setShowProductForm(false);
               }}
