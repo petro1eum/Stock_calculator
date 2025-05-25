@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { 
   ChartBarIcon, 
   CubeIcon, 
-  TrendingUpIcon, 
+  ArrowTrendingUpIcon, 
   ExclamationTriangleIcon,
   CheckCircleIcon,
   ArrowUpIcon,
@@ -20,7 +20,6 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ products, totalOptimalStock, totalOptionValue, onNavigate }) => {
-  const totalRevenue = products.reduce((sum, p) => sum + p.revenue, 0);
   const totalInvestment = products.reduce((sum, p) => sum + p.optQ * p.purchase, 0);
   const avgROI = totalInvestment > 0 ? (totalOptionValue / totalInvestment) * 100 : 0;
   const criticalProducts = products.filter(p => p.optValue < 0).length;
@@ -43,7 +42,7 @@ const Dashboard: React.FC<DashboardProps> = ({ products, totalOptimalStock, tota
       title: 'Суммарная ценность',
       value: `$${totalOptionValue.toLocaleString()}`,
       unit: '',
-      icon: TrendingUpIcon,
+      icon: ArrowTrendingUpIcon,
       color: totalOptionValue > 0 ? 'green' : 'red',
       trend: totalOptionValue > 0 ? 'up' : 'down',
       bgGradient: totalOptionValue > 0 ? 'from-green-500 to-green-600' : 'from-red-500 to-red-600'
@@ -61,7 +60,7 @@ const Dashboard: React.FC<DashboardProps> = ({ products, totalOptimalStock, tota
       title: 'Средний ROI',
       value: avgROI.toFixed(1),
       unit: '%',
-      icon: TrendingUpIcon,
+      icon: ArrowTrendingUpIcon,
       color: avgROI > 10 ? 'green' : avgROI > 0 ? 'yellow' : 'red',
       trend: avgROI > 10 ? 'up' : avgROI < 0 ? 'down' : null,
       bgGradient: avgROI > 10 ? 'from-green-500 to-green-600' : avgROI > 0 ? 'from-yellow-500 to-yellow-600' : 'from-red-500 to-red-600'
@@ -235,7 +234,7 @@ const Dashboard: React.FC<DashboardProps> = ({ products, totalOptimalStock, tota
           onClick={() => onNavigate('abc')}
           className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow"
         >
-          <TrendingUpIcon className="h-8 w-8 mb-2" />
+          <ArrowTrendingUpIcon className="h-8 w-8 mb-2" />
           <h3 className="font-semibold">ABC-анализ</h3>
           <p className="text-sm text-green-100 mt-1">Приоритизация ассортимента</p>
         </motion.button>

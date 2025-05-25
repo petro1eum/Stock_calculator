@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } from "recharts";
+import toast, { Toaster } from "react-hot-toast";
+import SimpleLayout from "./components/SimpleLayout";
+import Dashboard from "./components/Dashboard";
 
 // Импорт математических функций для возможности их использования и тестирования
 // import { normalCDF, inverseNormal, blackScholesCall, calculateExpectedRevenue as calcRevenue, calculateVolatility as calcVol } from './mathFunctions';
@@ -89,7 +92,7 @@ const InventoryOptionCalculator = () => {
   const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
   
   // Вкладки
-  const [activeTab, setActiveTab] = useState("assortment");
+  const [activeTab, setActiveTab] = useState("dashboard");
 
   // Сценарный анализ
   const [scenarios] = useState<Scenario[]>([
@@ -427,13 +430,13 @@ const InventoryOptionCalculator = () => {
 
   const addProduct = useCallback(() => {
     if (!productForm.name.trim() || !productForm.sku.trim()) {
-      alert('Пожалуйста, заполните название и SKU товара');
+      toast.error('Пожалуйста, заполните название и SKU товара');
       return;
     }
 
     const existingSku = products.find(p => p.sku === productForm.sku && p.id !== editingProductId);
     if (existingSku) {
-      alert('SKU уже существует. Используйте другой SKU.');
+      toast.error('SKU уже существует. Используйте другой SKU.');
       return;
     }
 
@@ -469,7 +472,7 @@ const InventoryOptionCalculator = () => {
     }
     
     if (validationErrors.length > 0) {
-      alert('Ошибки валидации:\n\n' + validationErrors.join('\n'));
+      toast.error('Ошибки валидации:\n' + validationErrors.join('\n'));
       return;
     }
 
@@ -493,8 +496,10 @@ const InventoryOptionCalculator = () => {
 
     if (editingProductId) {
       setProducts(prev => prev.map(p => p.id === editingProductId ? newProduct : p));
+      toast.success('Товар успешно обновлен');
     } else {
       setProducts(prev => [...prev, newProduct]);
+      toast.success('Товар успешно добавлен');
     }
 
     // Reset form inline to avoid dependency issues
@@ -537,6 +542,7 @@ const InventoryOptionCalculator = () => {
       if (selectedProduct === productId) {
         setSelectedProduct(null);
       }
+      toast.success('Товар успешно удален');
     }
   }, [selectedProduct]);
 
@@ -568,6 +574,7 @@ const InventoryOptionCalculator = () => {
   // Компонент слайдера с полем ввода значения
   const SliderWithValue: React.FC<SliderWithValueProps> = ({ label, value, onChange, min, max, step, tooltip, unit = "" }) => {
     const [inputValue, setInputValue] = useState(value.toString());
+    const [showTooltip, setShowTooltip] = useState(false);
     
     const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
       const newValue = parseFloat(e.target.value);
@@ -599,15 +606,24 @@ const InventoryOptionCalculator = () => {
     return (
       <div className="space-y-1">
         <div className="flex justify-between items-center mb-1">
-          <label className="text-sm font-medium text-gray-700">
+          <label className="text-sm font-medium text-gray-700 flex items-center relative">
             {label}
             {tooltip && (
-              <span 
-                className="ml-1 px-1 bg-blue-100 text-blue-800 rounded-full text-xs cursor-help"
-                title={tooltip}
-              >
-                ?
-              </span>
+              <>
+                <span 
+                  className="ml-2 inline-flex items-center justify-center w-4 h-4 bg-gray-200 hover:bg-gray-300 text-gray-600 rounded-full text-xs cursor-help transition-colors"
+                  onMouseEnter={() => setShowTooltip(true)}
+                  onMouseLeave={() => setShowTooltip(false)}
+                >
+                  ?
+                </span>
+                {showTooltip && (
+                  <div className="absolute z-10 left-0 top-6 w-80 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg">
+                    {tooltip}
+                    <div className="absolute -top-2 left-4 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-gray-800"></div>
+                  </div>
+                )}
+              </>
             )}
           </label>
           <div className="flex items-center">
@@ -642,7 +658,7 @@ const InventoryOptionCalculator = () => {
   // Функции экспорта/импорта
   const exportToCSV = useCallback(() => {
     if (products.length === 0) {
-      alert('Нет данных для экспорта');
+      toast.error('Нет данных для экспорта');
       return;
     }
     
@@ -693,7 +709,7 @@ const InventoryOptionCalculator = () => {
       
       // Проверяем формат файла
       if (!header.includes('SKU') || !header.includes('Название')) {
-        alert('Неверный формат файла. Убедитесь, что первая строка содержит заголовки колонок.');
+        toast.error('Неверный формат файла. Убедитесь, что первая строка содержит заголовки колонок.');
         return;
       }
       
@@ -729,9 +745,9 @@ const InventoryOptionCalculator = () => {
       
       if (newProducts.length > 0) {
         setProducts(newProducts);
-        alert(`Импортировано ${newProducts.length} товаров`);
+        toast.success(`Импортировано ${newProducts.length} товаров`);
       } else {
-        alert('Не удалось импортировать данные. Проверьте формат файла.');
+        toast.error('Не удалось импортировать данные. Проверьте формат файла.');
       }
     };
     
@@ -740,58 +756,38 @@ const InventoryOptionCalculator = () => {
     event.target.value = '';
   }, [generateNextId, generateNextSku]);
 
+  // Состояние для калькулятора "Что если"
+  const [testQuantity, setTestQuantity] = useState(0);
+
+  // Обновляем testQuantity при смене товара
+  useEffect(() => {
+    const product = productsWithMetrics.find(p => p.id === selectedProduct);
+    if (product) {
+      setTestQuantity(product.optQ);
+    }
+  }, [selectedProduct, productsWithMetrics]);
+
+  // Расчет метрик для дашборда
+  const totalOptimalStock = productsWithMetrics.reduce((sum, p) => sum + p.optQ, 0);
+  const totalOptionValue = productsWithMetrics.reduce((sum, p) => sum + p.optValue, 0);
+
   return (
-    <div className="p-6 space-y-6 bg-gray-50 font-sans">
-      <h1 className="text-2xl font-bold text-center mb-4">Опционный анализ запаса (Black-Scholes)</h1>
-      
-      {/* Вкладки */}
-      <div className="flex border-b border-gray-200">
-        <button 
-          className={`px-4 py-2 font-medium text-sm ${activeTab === "assortment" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"}`}
-          onClick={() => setActiveTab("assortment")}
-        >
-          Управление ассортиментом
-        </button>
-        <button 
-          className={`px-4 py-2 font-medium text-sm ${activeTab === "settings" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"}`}
-          onClick={() => setActiveTab("settings")}
-        >
-          Настройки модели
-        </button>
-        <button 
-          className={`px-4 py-2 font-medium text-sm ${activeTab === "productAnalysis" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"} ${!selectedProduct ? "opacity-50 cursor-not-allowed" : ""}`}
-          onClick={() => selectedProduct && setActiveTab("productAnalysis")}
-          disabled={!selectedProduct}
-        >
-          Анализ товара {selectedProduct && productsWithMetrics.find(p => p.id === selectedProduct) ? `(${productsWithMetrics.find(p => p.id === selectedProduct)?.name})` : ''}
-        </button>
-        <button 
-          className={`px-4 py-2 font-medium text-sm ${activeTab === "abc" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"} ${products.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
-          onClick={() => products.length > 0 && setActiveTab("abc")}
-          disabled={products.length === 0}
-        >
-          ABC-анализ
-        </button>
-        <button 
-          className={`px-4 py-2 font-medium text-sm ${activeTab === "theory" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"}`}
-          onClick={() => setActiveTab("theory")}
-        >
-          📚 Теория
-        </button>
-        <button 
-          className={`px-4 py-2 font-medium text-sm ${activeTab === "scenarios" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"} ${products.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
-          onClick={() => products.length > 0 && setActiveTab("scenarios")}
-          disabled={products.length === 0}
-        >
-          📊 Сценарии
-        </button>
-        <button 
-          className={`px-4 py-2 font-medium text-sm ${activeTab === "dataIO" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"}`}
-          onClick={() => setActiveTab("dataIO")}
-        >
-          📥 Данные
-        </button>
-      </div>
+    <>
+      <Toaster position="top-right" />
+      <SimpleLayout 
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        productsCount={products.length}
+      >
+        {/* Dashboard */}
+        {activeTab === "dashboard" && (
+        <Dashboard 
+          products={productsWithMetrics}
+          totalOptimalStock={totalOptimalStock}
+          totalOptionValue={totalOptionValue}
+          onNavigate={setActiveTab}
+        />
+      )}
       
       {/* Вкладка Теория */}
       {activeTab === "theory" && (
@@ -877,94 +873,123 @@ const InventoryOptionCalculator = () => {
       {/* Вкладка Настройки модели */}
       {activeTab === "settings" && (
         <div className="bg-white rounded-lg shadow-md p-4">
-          <h3 className="text-lg font-semibold mb-4">Параметры модели</h3>
+          <h3 className="text-lg font-semibold mb-4">Глобальные параметры модели</h3>
           <p className="text-gray-600 mb-6">
-            Эти параметры применяются ко всем товарам в вашем ассортименте. 
-            Изменение этих настроек повлияет на расчеты для всех продуктов.
+            Эти параметры являются общими для всего ассортимента и влияют на расчеты всех товаров.
+            Индивидуальные параметры товаров (цена, маржа, спрос, срок годности, мин/макс заказ, скидки) 
+            настраиваются отдельно для каждого SKU в разделе "Товары".
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <SliderWithValue 
-              label="Макс. q, шт" 
+              label="Максимум для графиков (технический параметр)" 
               value={maxUnits} 
               onChange={setMaxUnits} 
               min={500} 
               max={5000} 
               step={100} 
-              tooltip="Максимальный объем заказа для анализа"
+              unit="штук"
+              tooltip="ТЕХНИЧЕСКИЙ ПАРАМЕТР: До скольки штук строить график при анализе товара. НЕ ВЛИЯЕТ на расчеты! Только на масштаб графика. КОГДА МЕНЯТЬ: Если оптимальный заказ получается близко к правому краю графика - увеличьте это значение."
             />
             
             <SliderWithValue 
-              label="Rush-saving $/шт" 
-              value={rushSave} 
-              onChange={setRushSave} 
-              min={0} 
-              max={10} 
-              step={0.1} 
-              unit="$"
-              tooltip="Дополнительные затраты на единицу товара при rush-поставке (снижение маржи)"
-            />
-            
-            <SliderWithValue 
-              label="Вероятность rush" 
-              value={rushProb} 
-              onChange={setRushProb} 
-              min={0} 
-              max={1} 
-              step={0.01}
-              tooltip="Доля lost sales, которые будут закрыты через rush-поставку"
-            />
-            
-            <SliderWithValue 
-              label="Хранение $/шт/нед" 
-              value={hold} 
-              onChange={setHold} 
-              min={0.01} 
-              max={5} 
-              step={0.01} 
-              unit="$"
-              tooltip="Стоимость хранения единицы товара в неделю"
-            />
-            
-            <SliderWithValue 
-              label="Ставка капитала (%/год)" 
-              value={r * 100} 
-              onChange={v => setR(v / 100)} 
-              min={1} 
-              max={30} 
-              step={0.5} 
-              unit="%"
-              tooltip="Годовая процентная ставка стоимости капитала"
-            />
-            
-            <SliderWithValue 
-              label="Период поставки (недель)" 
+              label="Период поставки" 
               value={weeks} 
               onChange={setWeeks} 
               min={1} 
               max={26} 
               step={1}
-              tooltip="Количество недель на выполнение заказа или период анализа"
+              unit="нед"
+              tooltip="Сколько недель проходит от размещения заказа до получения товара. Пример: 2-4 недели для России, 8-12 для Китая, 1 неделя для местных поставщиков."
             />
             
             <SliderWithValue 
-              label="Целевой уровень сервиса (CSL)" 
-              value={csl} 
-              onChange={setCsl} 
-              min={0.5} 
-              max={0.99} 
-              step={0.01}
-              tooltip="Целевой уровень сервиса (вероятность удовлетворения спроса)"
+              label="Альтернативная доходность ваших денег" 
+              value={r * 100} 
+              onChange={v => setR(v / 100)} 
+              min={1} 
+              max={30} 
+              step={0.5} 
+              unit="%/год"
+              tooltip="ВОПРОС: Если бы вы НЕ вложили деньги в товар, а вложили их куда-то еще (банковский депозит, другой бизнес, акции), сколько бы заработали за год? ЗАЧЕМ: Деньги в товаре 'замораживаются' и не приносят доход. Это скрытые потери. ПРИМЕР: Депозит 15% годовых = ваша альтернативная доходность 15%."
+            />
+            
+            <SliderWithValue 
+              label="Затраты на хранение 1 штуки товара" 
+              value={hold} 
+              onChange={setHold} 
+              min={0.01} 
+              max={5} 
+              step={0.01} 
+              unit="$ за штуку в неделю"
+              tooltip="ВОПРОС: Сколько денег вы тратите, чтобы хранить 1 единицу товара на складе 1 неделю? КАК СЧИТАТЬ: 1) Возьмите все затраты на склад за месяц (аренда + зарплаты + охрана + свет), 2) Поделите на количество товаров на складе, 3) Поделите на 4 недели. ПРИМЕР: Затраты $4000/мес, товаров 2000 шт = $2/шт/мес = $0.50/шт/нед."
+            />
+            
+            <SliderWithValue 
+              label="Экстренные закупки у поставщика" 
+              value={rushProb * 100} 
+              onChange={(v) => setRushProb(v / 100)} 
+              min={0} 
+              max={100} 
+              step={1}
+              unit="% случаев"
+              tooltip="СИТУАЦИЯ: У вас кончился товар, а покупатель хочет купить. ВОПРОС: Сможете ли вы БЫСТРО купить у своего поставщика и продать клиенту? ОТВЕТ: 0% = никогда (товар из Китая, долго везти), 50% = в половине случаев, 100% = всегда (поставщик рядом, привезет за час)"
+            />
+            
+            <SliderWithValue 
+              label="Ваши потери при экстренной закупке" 
+              value={rushSave} 
+              onChange={setRushSave} 
+              min={0} 
+              max={10} 
+              step={0.1} 
+              unit="$/шт"
+              tooltip="СИТУАЦИЯ: Товар кончился, вы звоните поставщику: 'Привези СРОЧНО!'. Он говорит: 'Могу, но дороже'. ВОПРОС: На сколько меньше вы заработаете с каждой штуки? ПРИМЕР: Обычно покупаете за $10, продаете за $20 (заработок $10). При срочной закупке покупаете за $13, продаете за $20 (заработок $7). Потеря = $3."
+            />
+            
+            <SliderWithValue 
+              label="Сколько клиентов НЕ должны уйти без товара" 
+              value={csl * 100} 
+              onChange={(v) => setCsl(v / 100)} 
+              min={50} 
+              max={99} 
+              step={1}
+              unit="% из 100"
+              tooltip="СИТУАЦИЯ: К вам приходят 100 покупателей. У некоторых товар есть, у некоторых - кончился. ВОПРОС: Скольким из 100 вы хотите продать? КОМПРОМИСС: 99% = почти всем продадите (но нужен БОЛЬШОЙ запас), 90% = 10 из 100 уйдут без покупки (но запас МЕНЬШЕ). РЕКОМЕНДАЦИЯ: 95% - золотая середина."
             />
           </div>
           
-          <div className="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500">
-            <h4 className="font-semibold text-blue-800 mb-2">Информация о модели</h4>
-            <p className="text-sm text-blue-900">
-              Модель использует теорию реальных опционов (Black-Scholes) для определения оптимального уровня запаса. 
-              Закупка товара рассматривается как покупка колл-опциона на будущую выручку.
-              Индивидуальные параметры товаров (цена, маржа, спрос) настраиваются для каждого SKU отдельно.
-            </p>
-          </div>
+                      <div className="mt-6 space-y-4">
+              <div className="p-4 bg-blue-50 border-l-4 border-blue-500">
+                <h4 className="font-semibold text-blue-800 mb-2">Разделение параметров</h4>
+                <div className="text-sm text-blue-900 space-y-2">
+                  <p><strong>Глобальные параметры (здесь):</strong></p>
+                  <ul className="list-disc list-inside ml-2">
+                    <li>Период поставки и логистика</li>
+                    <li>Стоимость капитала и хранения</li>
+                    <li>Rush-поставки и целевой уровень сервиса</li>
+                  </ul>
+                  <p className="mt-2"><strong>Индивидуальные параметры (в разделе "Товары"):</strong></p>
+                  <ul className="list-disc list-inside ml-2">
+                    <li>Закупочная цена и маржа</li>
+                    <li>Спрос и его волатильность</li>
+                    <li>Срок годности, мин/макс заказ</li>
+                    <li>Скидки за объем</li>
+                  </ul>
+                </div>
+              </div>
+              
+              <div className="p-4 bg-green-50 border-l-4 border-green-500">
+                <h4 className="font-semibold text-green-800 mb-2">Шпаргалка: типичные значения</h4>
+                <div className="text-sm text-green-900 space-y-1">
+                  <p>• <strong>Период поставки:</strong> 1 неделя (сосед-поставщик), 2-4 недели (из другого города), 8-12 недель (из Китая)</p>
+                  <p>• <strong>Альтернативная доходность:</strong> 10-15% (у вас есть деньги), 20-30% (деньги в кредит)</p>
+                  <p>• <strong>Хранение:</strong> $0.1-0.5 (мелкие товары), $1-3 (обычные), $5+ (холодильники, мебель)</p>
+                  <p>• <strong>Экстренные закупки:</strong> 0-30% (импорт), 50-80% (город рядом), 90%+ (свое производство)</p>
+                  <p>• <strong>Потери при срочности:</strong> $1-2 (мелкая маржа), $5-10 (обычно), $20+ (дорогие товары)</p>
+                  <p>• <strong>Обслужить клиентов:</strong> 90% (дешевые товары), 95% (обычные), 99% (дорогие/важные)</p>
+                </div>
+              </div>
+            </div>
         </div>
       )}
       
@@ -998,30 +1023,53 @@ const InventoryOptionCalculator = () => {
                   <h3 className="text-lg font-semibold">Анализ товара: {product.name} ({product.sku})</h3>
                   <button 
                     className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                    onClick={() => editProduct(product)}
+                    onClick={() => {
+                      editProduct(product);
+                      setActiveTab('assortment');
+                    }}
                   >
                     Редактировать параметры
                   </button>
                 </div>
                 
                 {/* Основные характеристики товара */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-gray-100 p-3 rounded">
-                    <div className="text-sm text-gray-500">Закупочная цена</div>
-                    <div className="text-lg font-bold">${product.purchase}</div>
+                <div className="mb-6">
+                  <h4 className="text-md font-semibold mb-3">Параметры товара</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-gray-100 p-3 rounded">
+                      <div className="text-sm text-gray-500">Закупочная цена</div>
+                      <div className="text-lg font-bold">${product.purchase}</div>
+                    </div>
+                    <div className="bg-gray-100 p-3 rounded">
+                      <div className="text-sm text-gray-500">Маржа</div>
+                      <div className="text-lg font-bold">${product.margin}</div>
+                      <div className="text-xs text-gray-500">{((product.margin / product.purchase) * 100).toFixed(0)}% рентабельность</div>
+                    </div>
+                    <div className="bg-gray-100 p-3 rounded">
+                      <div className="text-sm text-gray-500">Спрос в неделю</div>
+                      <div className="text-lg font-bold">{fmt(product.muWeek)} ± {fmt(product.sigmaWeek)}</div>
+                      <div className="text-xs text-gray-500">CV: {((product.sigmaWeek / product.muWeek) * 100).toFixed(0)}%</div>
+                    </div>
+                    <div className="bg-gray-100 p-3 rounded">
+                      <div className="text-sm text-gray-500">Годовая выручка</div>
+                      <div className="text-lg font-bold">${fmt(product.revenue)}</div>
+                    </div>
                   </div>
-                  <div className="bg-gray-100 p-3 rounded">
-                    <div className="text-sm text-gray-500">Маржа</div>
-                    <div className="text-lg font-bold">${product.margin}</div>
-                  </div>
-                  <div className="bg-gray-100 p-3 rounded">
-                    <div className="text-sm text-gray-500">Спрос в неделю</div>
-                    <div className="text-lg font-bold">{fmt(product.muWeek)} ± {fmt(product.sigmaWeek)}</div>
-                  </div>
-                  <div className="bg-gray-100 p-3 rounded">
-                    <div className="text-sm text-gray-500">Годовая выручка</div>
-                    <div className="text-lg font-bold">${fmt(product.revenue)}</div>
-                  </div>
+                  
+                  {/* Дополнительные ограничения если есть */}
+                  {(product.shelfLife || product.minOrderQty || product.maxStorageQty || product.volumeDiscounts?.length) && (
+                    <div className="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-500">
+                      <h5 className="font-semibold text-yellow-800 mb-2">Индивидуальные ограничения товара:</h5>
+                      <div className="text-sm text-yellow-900 space-y-1">
+                        {product.shelfLife && <p>• Срок годности: {product.shelfLife} недель</p>}
+                        {product.minOrderQty && <p>• Минимальный заказ: {product.minOrderQty} штук</p>}
+                        {product.maxStorageQty && <p>• Максимум на складе: {product.maxStorageQty} штук</p>}
+                        {product.volumeDiscounts && product.volumeDiscounts.length > 0 && (
+                          <p>• Скидки за объем: {product.volumeDiscounts.map(d => `${d.qty}шт = -${d.discount}%`).join(', ')}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Результаты оптимизации */}
@@ -1084,40 +1132,188 @@ const InventoryOptionCalculator = () => {
                   </div>
                 </div>
 
+                {/* Калькулятор "Что если" */}
+                {(() => {
+                  // Используем локальное состояние для количества текущего товара
+                  const currentTestQty = selectedProduct === product.id ? testQuantity : product.optQ;
+                  
+                  // Расчет метрик для выбранного количества
+                  const calcMetricsForQ = (q: number) => {
+                    const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
+                    const S = calculateExpectedRevenue(q, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
+                    const K = q * effectivePurchase * (1 + r * weeks / 52) + q * hold * weeks;
+                    const T = weeks / 52;
+                    const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q);
+                    const { optionValue } = blackScholes(S, K, T, sigma, r);
+                    
+                    return {
+                      value: optionValue,
+                      investment: q * effectivePurchase,
+                      storage: q * hold * weeks,
+                      revenue: S,
+                      roi: q > 0 ? (optionValue / (q * effectivePurchase)) * 100 : 0
+                    };
+                  };
+                  
+                  const currentMetrics = calcMetricsForQ(currentTestQty);
+                  const optimalMetrics = calcMetricsForQ(product.optQ);
+                  
+                  return (
+                    <div className="bg-white border rounded-lg p-4 mb-6">
+                      <h4 className="text-md font-semibold mb-4">Калькулятор "Что если?"</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Если я закажу:</label>
+                          <input
+                            type="number"
+                            value={currentTestQty}
+                            onChange={(e) => {
+                              const newValue = parseInt(e.target.value) || 0;
+                              setTestQuantity(newValue);
+                            }}
+                            min="0"
+                            max={maxUnits}
+                            className="mt-1 w-full p-2 border border-gray-300 rounded font-bold text-lg"
+                          />
+                          <span className="text-xs text-gray-500">штук товара</span>
+                        </div>
+                        <div className={`p-3 rounded ${currentMetrics.value > 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+                          <div className="text-sm text-gray-600">То заработаю:</div>
+                          <div className={`text-lg font-bold ${currentMetrics.value > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${fmt(currentMetrics.value)}
+                          </div>
+                          <div className="text-xs text-gray-500">ROI: {currentMetrics.roi.toFixed(1)}%</div>
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded">
+                          <div className="text-sm text-gray-600">Вложу денег:</div>
+                          <div className="text-lg font-bold">${fmt(currentMetrics.investment)}</div>
+                          <div className="text-xs text-gray-500">+ ${fmt(currentMetrics.storage)} хранение</div>
+                        </div>
+                        <div className="bg-blue-50 p-3 rounded">
+                          <div className="text-sm text-gray-600">Сравнение с оптимальным:</div>
+                          <div className={`text-lg font-bold ${currentMetrics.value >= optimalMetrics.value ? 'text-green-600' : 'text-orange-600'}`}>
+                            {currentMetrics.value >= optimalMetrics.value ? '✓ Оптимально' : 
+                             `−$${fmt(optimalMetrics.value - currentMetrics.value)}`}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Оптимум: {product.optQ} шт
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        <button 
+                          className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                          onClick={() => {
+                            setTestQuantity(product.optQ);
+                            toast.success(`Установлено оптимальное количество: ${product.optQ} штук`);
+                          }}
+                        >
+                          💡 Применить оптимальное количество
+                        </button>
+                        <button 
+                          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                          onClick={() => exportToCSV()}
+                        >
+                          📊 Экспортировать анализ
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* График зависимости */}
                 <div className="bg-white border rounded-lg p-4">
-                  <h4 className="text-md font-semibold mb-4">Зависимость ценности опциона от объёма заказа</h4>
-                  <div className="h-80">
+                  <h4 className="text-md font-semibold mb-2">График анализа прибыльности</h4>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Показывает, сколько вы заработаете при разных объемах заказа
+                  </p>
+                  <div className="h-96">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
+                      <LineChart data={chartData} margin={{ top: 20, right: 30, left: 40, bottom: 60 }}>
+                        <defs>
+                          <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0.1}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                         <XAxis
                           dataKey="q"
-                          label={{ value: 'Объём заказа, шт', position: 'insideBottom', offset: -5 }}
+                          label={{ value: 'Количество заказа (штук)', position: 'insideBottom', offset: -10, style: { fontSize: 14 } }}
+                          tick={{ fontSize: 12 }}
                         />
                         <YAxis
-                          label={{ value: 'Ценность опциона, $', angle: -90, position: 'insideLeft' }}
-                          tickFormatter={(value) => fmt(Number(value))}
+                          label={{ value: 'Прибыль ($)', angle: -90, position: 'insideLeft', style: { fontSize: 14 } }}
+                          tickFormatter={(value) => `$${fmt(Number(value))}`}
+                          tick={{ fontSize: 12 }}
                         />
                         <Tooltip
-                          formatter={(value) => ['$' + fmt(Number(value)), 'Ценность опциона']}
-                          labelFormatter={(value) => `Заказ: ${value} шт`}
+                          formatter={(value) => ['$' + fmt(Number(value)), 'Прибыль']}
+                          labelFormatter={(value) => `При заказе ${value} шт`}
+                          contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', borderRadius: '8px' }}
                         />
-                        <ReferenceLine x={product.optQ} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'q*', position: 'top' }} />
-                        <ReferenceLine y={0} stroke="#000" strokeDasharray="3 3" />
-                        <ReferenceLine x={product.safety} stroke="#2196f3" strokeDasharray="3 3" label={{ value: 'safety', position: 'bottom' }} />
-                        <Line type="monotone" dataKey="value" stroke="#8884d8" activeDot={{ r: 8 }} />
+                        
+                        {/* Зона убытков */}
+                        <ReferenceLine y={0} stroke="#ef4444" strokeWidth={2} />
+                        
+                        {/* Оптимальное количество */}
+                        <ReferenceLine 
+                          x={product.optQ} 
+                          stroke="#f59e0b" 
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                        >
+                          <Label value={`Оптимум: ${fmt(product.optQ)} шт`} position="top" offset={10} style={{ fontSize: 12, fill: '#f59e0b' }} />
+                        </ReferenceLine>
+                        
+                        {/* Страховой запас */}
+                        <ReferenceLine 
+                          x={product.safety} 
+                          stroke="#3b82f6" 
+                          strokeWidth={1}
+                          strokeDasharray="3 3"
+                        >
+                          <Label value={`Мин. запас: ${fmt(product.safety)} шт`} position="bottom" offset={10} style={{ fontSize: 12, fill: '#3b82f6' }} />
+                        </ReferenceLine>
+                        
+                        {/* Основная линия */}
+                        <Line 
+                          type="monotone" 
+                          dataKey="value" 
+                          stroke="#10b981" 
+                          strokeWidth={3}
+                          fill="url(#colorValue)"
+                          activeDot={{ r: 6, fill: '#10b981' }} 
+                        />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="mt-4 text-sm text-gray-500">
-                    <div className="flex items-center">
-                      <div className="w-4 h-0 border-t-2 border-orange-500 border-dashed mr-2"></div>
-                      <span>q* — оптимальный объём заказа: {fmt(product.optQ)} шт</span>
+                  
+                  {/* Легенда */}
+                  <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="flex items-center space-x-3 p-3 bg-orange-50 rounded-lg">
+                      <div className="w-1 h-8 bg-orange-500 rounded"></div>
+                      <div>
+                        <div className="text-sm font-medium text-orange-900">Оптимальный заказ</div>
+                        <div className="text-lg font-bold text-orange-600">{fmt(product.optQ)} штук</div>
+                        <div className="text-xs text-orange-700">Макс. прибыль: ${fmt(product.optValue)}</div>
+                      </div>
                     </div>
-                    <div className="flex items-center mt-1">
-                      <div className="w-4 h-0 border-t-2 border-blue-500 border-dashed mr-2"></div>
-                      <span>safety — минимальный запас для CSL {(csl * 100).toFixed(0)}%: {fmt(product.safety)} шт</span>
+                    <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
+                      <div className="w-1 h-8 bg-blue-500 rounded"></div>
+                      <div>
+                        <div className="text-sm font-medium text-blue-900">Страховой запас</div>
+                        <div className="text-lg font-bold text-blue-600">{fmt(product.safety)} штук</div>
+                        <div className="text-xs text-blue-700">Для {(csl * 100).toFixed(0)}% доступности</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-3 p-3 bg-red-50 rounded-lg">
+                      <div className="w-1 h-8 bg-red-500 rounded"></div>
+                      <div>
+                        <div className="text-sm font-medium text-red-900">Зона убытков</div>
+                        <div className="text-lg font-bold text-red-600">Ниже $0</div>
+                        <div className="text-xs text-red-700">Невыгодно закупать</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1132,7 +1328,12 @@ const InventoryOptionCalculator = () => {
         <div className="bg-white rounded-lg shadow-md">
           <div className="p-4">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold">Управление ассортиментом</h3>
+              <div>
+                <h3 className="text-lg font-semibold">Управление ассортиментом</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Здесь настраиваются индивидуальные параметры каждого товара
+                </p>
+              </div>
               <div className="flex space-x-2">
                 <button 
                   className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
@@ -1250,6 +1451,11 @@ const InventoryOptionCalculator = () => {
                       className="w-full p-2 border border-gray-300 rounded"
                     />
                   </div>
+                </div>
+                
+                {/* Расширенные индивидуальные параметры */}
+                <h5 className="text-md font-semibold mt-4 mb-3 text-gray-700">Дополнительные ограничения товара</h5>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Срок годности, недель
@@ -1858,7 +2064,8 @@ const InventoryOptionCalculator = () => {
           </div>
         </div>
       )}
-    </div>
+    </SimpleLayout>
+    </>
   );
 };
 
