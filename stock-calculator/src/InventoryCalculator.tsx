@@ -10,6 +10,11 @@ interface ChartPoint {
   value: number;
 }
 
+interface VolumeDiscount {
+  qty: number;
+  discount: number;
+}
+
 interface Product {
   id: number;
   name: string;
@@ -22,12 +27,24 @@ interface Product {
   optQ: number;
   optValue: number;
   safety: number;
+  // Новые поля для расширенных ограничений
+  shelfLife?: number;        // Срок годности в неделях
+  minOrderQty?: number;       // Минимальный размер заказа
+  maxStorageQty?: number;     // Максимальная вместимость склада
+  volumeDiscounts?: VolumeDiscount[];  // Скидки за объем
 }
 
 interface ProductWithCategory extends Product {
   category: 'A' | 'B' | 'C';
   percent: number;
   accumPercent: number;
+}
+
+interface Scenario {
+  name: string;
+  muWeekMultiplier: number;
+  sigmaWeekMultiplier: number;
+  probability: number;
 }
 
 interface SliderWithValueProps {
@@ -74,6 +91,13 @@ const InventoryOptionCalculator = () => {
   // Вкладки
   const [activeTab, setActiveTab] = useState("assortment");
 
+  // Сценарный анализ
+  const [scenarios] = useState<Scenario[]>([
+    { name: "Пессимистичный", muWeekMultiplier: 0.7, sigmaWeekMultiplier: 1.3, probability: 0.25 },
+    { name: "Базовый", muWeekMultiplier: 1.0, sigmaWeekMultiplier: 1.0, probability: 0.5 },
+    { name: "Оптимистичный", muWeekMultiplier: 1.3, sigmaWeekMultiplier: 0.8, probability: 0.25 }
+  ]);
+
   // Форма для добавления/редактирования продукта
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
@@ -83,7 +107,11 @@ const InventoryOptionCalculator = () => {
     purchase: 0,
     margin: 0,
     muWeek: 0,
-    sigmaWeek: 0
+    sigmaWeek: 0,
+    shelfLife: 0,
+    minOrderQty: 0,
+    maxStorageQty: 0,
+    volumeDiscounts: [] as VolumeDiscount[]
   });
 
   // Демо данные (загружаются по кнопке)
@@ -169,6 +197,23 @@ const InventoryOptionCalculator = () => {
       lostSum += Math.max(0, demand - units);
     }
     return lostSum / adaptiveTrials;
+  }, []);
+
+  // Расчет эффективной цены закупки с учетом скидок за объем
+  const getEffectivePurchasePrice = useCallback((basePrice: number, quantity: number, volumeDiscounts?: VolumeDiscount[]): number => {
+    if (!volumeDiscounts || volumeDiscounts.length === 0) {
+      return basePrice;
+    }
+    
+    // Сортируем скидки по количеству и находим применимую
+    const sortedDiscounts = [...volumeDiscounts].sort((a, b) => b.qty - a.qty);
+    const applicableDiscount = sortedDiscounts.find(d => quantity >= d.qty);
+    
+    if (applicableDiscount) {
+      return basePrice * (1 - applicableDiscount.discount / 100);
+    }
+    
+    return basePrice;
   }, []);
 
   // ИСПРАВЛЕНО: Расчет ожидаемой выручки (S - spot price)
@@ -305,17 +350,35 @@ const InventoryOptionCalculator = () => {
       // Динамический шаг в зависимости от объема спроса (минимум 1)
       const step = Math.max(1, Math.round(product.muWeek / 10));
       
-      for (let q = 0; q <= maxUnits; q += step) {
+      // Учитываем ограничения
+      const minQ = product.minOrderQty || 0;
+      const maxQ = product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits;
+      
+      // Учитываем срок годности
+      let effectiveWeeks = weeks;
+      if (product.shelfLife && product.shelfLife > 0) {
+        effectiveWeeks = Math.min(weeks, product.shelfLife);
+      }
+      
+      for (let q = minQ; q <= maxQ; q += step) {
+        // Получаем эффективную цену с учетом скидок
+        const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
+        
         // ИСПРАВЛЕНО: Используем новые функции расчета
-        const S = calculateExpectedRevenue(q, product.muWeek, product.sigmaWeek, weeks, product.purchase, product.margin, rushProb, rushSave);
-        const K = q * product.purchase * (1 + r * weeks / 52) + q * hold * weeks;
-        const T = weeks / 52;
-        const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q);
+        const S = calculateExpectedRevenue(q, product.muWeek, product.sigmaWeek, effectiveWeeks, effectivePurchase, product.margin, rushProb, rushSave);
+        const K = q * effectivePurchase * (1 + r * effectiveWeeks / 52) + q * hold * effectiveWeeks;
+        const T = effectiveWeeks / 52;
+        const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, effectiveWeeks, q);
         
         const { optionValue } = blackScholes(S, K, T, sigma, r);
         const net = optionValue;
         
         if (net > bestNet) { bestNet = net; bestQ = q; }
+      }
+      
+      // Проверяем минимальный заказ
+      if (product.minOrderQty && bestQ < product.minOrderQty) {
+        bestQ = product.minOrderQty;
       }
       
       return {
@@ -325,7 +388,7 @@ const InventoryOptionCalculator = () => {
         safety: productSafety
       };
     });
-  }, [products, rushSave, rushProb, hold, r, weeks, csl, blackScholes, calculateExpectedRevenue, calculateVolatility, invNorm, maxUnits]);
+  }, [products, rushSave, rushProb, hold, r, weeks, csl, blackScholes, calculateExpectedRevenue, calculateVolatility, invNorm, maxUnits, getEffectivePurchasePrice]);
 
   // ABC-анализ с использованием продуктов с рассчитанными метриками
   const abcAnalysisResult = useMemo(() => {
@@ -421,7 +484,11 @@ const InventoryOptionCalculator = () => {
       revenue: productForm.muWeek * (productForm.purchase + productForm.margin) * 52,
       optQ: 0,
       optValue: 0,
-      safety: 0
+      safety: 0,
+      shelfLife: productForm.shelfLife || undefined,
+      minOrderQty: productForm.minOrderQty || undefined,
+      maxStorageQty: productForm.maxStorageQty || undefined,
+      volumeDiscounts: productForm.volumeDiscounts.length > 0 ? productForm.volumeDiscounts : undefined
     };
 
     if (editingProductId) {
@@ -437,7 +504,11 @@ const InventoryOptionCalculator = () => {
       purchase: 0,
       margin: 0,
       muWeek: 0,
-      sigmaWeek: 0
+      sigmaWeek: 0,
+      shelfLife: 0,
+      minOrderQty: 0,
+      maxStorageQty: 0,
+      volumeDiscounts: [] as VolumeDiscount[]
     });
     setEditingProductId(null);
     setShowProductForm(false);
@@ -450,7 +521,11 @@ const InventoryOptionCalculator = () => {
       purchase: product.purchase,
       margin: product.margin,
       muWeek: product.muWeek,
-      sigmaWeek: product.sigmaWeek
+      sigmaWeek: product.sigmaWeek,
+      shelfLife: product.shelfLife || 0,
+      minOrderQty: product.minOrderQty || 0,
+      maxStorageQty: product.maxStorageQty || 0,
+      volumeDiscounts: product.volumeDiscounts || []
     });
     setEditingProductId(product.id);
     setShowProductForm(true);
@@ -564,6 +639,107 @@ const InventoryOptionCalculator = () => {
     );
   };
 
+  // Функции экспорта/импорта
+  const exportToCSV = useCallback(() => {
+    if (products.length === 0) {
+      alert('Нет данных для экспорта');
+      return;
+    }
+    
+    // Заголовки
+    const headers = ['SKU', 'Название', 'Закупочная цена', 'Маржа', 'Средний спрос/нед', 'Станд. откл./нед', 
+                     'Срок годности (нед)', 'Мин. заказ', 'Макс. склад', 'Оптим. заказ', 'Ценность опциона', 'Safety-stock'];
+    
+    // Данные
+    const data = productsWithMetrics.map(p => [
+      p.sku,
+      p.name,
+      p.purchase,
+      p.margin,
+      p.muWeek,
+      p.sigmaWeek,
+      p.shelfLife || '',
+      p.minOrderQty || '',
+      p.maxStorageQty || '',
+      p.optQ,
+      p.optValue.toFixed(2),
+      p.safety
+    ]);
+    
+    // Создаем CSV
+    const csvContent = [headers, ...data].map(e => e.join(',')).join('\n');
+    
+    // Скачиваем файл
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `inventory_optimization_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [products, productsWithMetrics]);
+
+  const importFromCSV = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split('\n');
+      const header = lines[0].split(',');
+      
+      // Проверяем формат файла
+      if (!header.includes('SKU') || !header.includes('Название')) {
+        alert('Неверный формат файла. Убедитесь, что первая строка содержит заголовки колонок.');
+        return;
+      }
+      
+      const newProducts: Product[] = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const values = line.split(',');
+        if (values.length < 6) continue;
+        
+        const product: Product = {
+          id: generateNextId() + i - 1,
+          sku: values[0] || generateNextSku(),
+          name: values[1] || 'Без названия',
+          purchase: parseFloat(values[2]) || 0,
+          margin: parseFloat(values[3]) || 0,
+          muWeek: parseFloat(values[4]) || 0,
+          sigmaWeek: parseFloat(values[5]) || 0,
+          shelfLife: values[6] ? parseFloat(values[6]) : undefined,
+          minOrderQty: values[7] ? parseFloat(values[7]) : undefined,
+          maxStorageQty: values[8] ? parseFloat(values[8]) : undefined,
+          revenue: 0,
+          optQ: 0,
+          optValue: 0,
+          safety: 0
+        };
+        
+        product.revenue = product.muWeek * (product.purchase + product.margin) * 52;
+        newProducts.push(product);
+      }
+      
+      if (newProducts.length > 0) {
+        setProducts(newProducts);
+        alert(`Импортировано ${newProducts.length} товаров`);
+      } else {
+        alert('Не удалось импортировать данные. Проверьте формат файла.');
+      }
+    };
+    
+    reader.readAsText(file);
+    // Сбрасываем input для возможности повторной загрузки того же файла
+    event.target.value = '';
+  }, [generateNextId, generateNextSku]);
+
   return (
     <div className="p-6 space-y-6 bg-gray-50 font-sans">
       <h1 className="text-2xl font-bold text-center mb-4">Опционный анализ запаса (Black-Scholes)</h1>
@@ -601,6 +777,19 @@ const InventoryOptionCalculator = () => {
           onClick={() => setActiveTab("theory")}
         >
           📚 Теория
+        </button>
+        <button 
+          className={`px-4 py-2 font-medium text-sm ${activeTab === "scenarios" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"} ${products.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+          onClick={() => products.length > 0 && setActiveTab("scenarios")}
+          disabled={products.length === 0}
+        >
+          📊 Сценарии
+        </button>
+        <button 
+          className={`px-4 py-2 font-medium text-sm ${activeTab === "dataIO" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500"}`}
+          onClick={() => setActiveTab("dataIO")}
+        >
+          📥 Данные
         </button>
       </div>
       
@@ -954,7 +1143,11 @@ const InventoryOptionCalculator = () => {
                       purchase: 0,
                       margin: 0,
                       muWeek: 0,
-                      sigmaWeek: 0
+                      sigmaWeek: 0,
+                      shelfLife: 0,
+                      minOrderQty: 0,
+                      maxStorageQty: 0,
+                      volumeDiscounts: [] as VolumeDiscount[]
                     });
                     setShowProductForm(true);
                   }}
@@ -1057,7 +1250,110 @@ const InventoryOptionCalculator = () => {
                       className="w-full p-2 border border-gray-300 rounded"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Срок годности, недель
+                      <span className="text-xs text-gray-500 ml-1">(необязательно)</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={productForm.shelfLife || ''}
+                      onChange={(e) => setProductForm(prev => ({ ...prev, shelfLife: parseFloat(e.target.value) || 0 }))}
+                      className="w-full p-2 border border-gray-300 rounded"
+                      placeholder="0 = без ограничений"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Минимальный заказ, шт
+                      <span className="text-xs text-gray-500 ml-1">(необязательно)</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={productForm.minOrderQty || ''}
+                      onChange={(e) => setProductForm(prev => ({ ...prev, minOrderQty: parseFloat(e.target.value) || 0 }))}
+                      className="w-full p-2 border border-gray-300 rounded"
+                      placeholder="0 = без ограничений"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Макс. вместимость склада, шт
+                      <span className="text-xs text-gray-500 ml-1">(необязательно)</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={productForm.maxStorageQty || ''}
+                      onChange={(e) => setProductForm(prev => ({ ...prev, maxStorageQty: parseFloat(e.target.value) || 0 }))}
+                      className="w-full p-2 border border-gray-300 rounded"
+                      placeholder="0 = без ограничений"
+                    />
+                  </div>
                 </div>
+                
+                {/* Секция для скидок за объем */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Скидки за объем
+                    <span className="text-xs text-gray-500 ml-1">(необязательно)</span>
+                  </label>
+                  <div className="space-y-2">
+                    {productForm.volumeDiscounts.map((discount, index) => (
+                      <div key={index} className="flex items-center space-x-2">
+                        <input
+                          type="number"
+                          value={discount.qty}
+                          onChange={(e) => {
+                            const newDiscounts = [...productForm.volumeDiscounts];
+                            newDiscounts[index].qty = parseFloat(e.target.value) || 0;
+                            setProductForm(prev => ({ ...prev, volumeDiscounts: newDiscounts }));
+                          }}
+                          className="w-32 p-2 border border-gray-300 rounded"
+                          placeholder="Количество"
+                        />
+                        <span>шт →</span>
+                        <input
+                          type="number"
+                          value={discount.discount}
+                          onChange={(e) => {
+                            const newDiscounts = [...productForm.volumeDiscounts];
+                            newDiscounts[index].discount = parseFloat(e.target.value) || 0;
+                            setProductForm(prev => ({ ...prev, volumeDiscounts: newDiscounts }));
+                          }}
+                          className="w-24 p-2 border border-gray-300 rounded"
+                          placeholder="Скидка %"
+                        />
+                        <span>%</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newDiscounts = productForm.volumeDiscounts.filter((_, i) => i !== index);
+                            setProductForm(prev => ({ ...prev, volumeDiscounts: newDiscounts }));
+                          }}
+                          className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                        >
+                          Удалить
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProductForm(prev => ({
+                          ...prev,
+                          volumeDiscounts: [...prev.volumeDiscounts, { qty: 0, discount: 0 }]
+                        }));
+                      }}
+                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                    >
+                      + Добавить скидку
+                    </button>
+                  </div>
+                </div>
+                
                 <div className="flex space-x-2 mt-4">
                   <button 
                     className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
@@ -1074,7 +1370,11 @@ const InventoryOptionCalculator = () => {
                         purchase: 0,
                         margin: 0,
                         muWeek: 0,
-                        sigmaWeek: 0
+                        sigmaWeek: 0,
+                        shelfLife: 0,
+                        minOrderQty: 0,
+                        maxStorageQty: 0,
+                        volumeDiscounts: [] as VolumeDiscount[]
                       });
                       setEditingProductId(null);
                       setShowProductForm(false);
@@ -1099,7 +1399,11 @@ const InventoryOptionCalculator = () => {
                       purchase: 0,
                       margin: 0,
                       muWeek: 0,
-                      sigmaWeek: 0
+                      sigmaWeek: 0,
+                      shelfLife: 0,
+                      minOrderQty: 0,
+                      maxStorageQty: 0,
+                      volumeDiscounts: [] as VolumeDiscount[]
                     });
                     setShowProductForm(true);
                   }}
@@ -1295,6 +1599,262 @@ const InventoryOptionCalculator = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Вкладка Сценарный анализ */}
+      {activeTab === "scenarios" && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold mb-4">Сценарный анализ</h3>
+          
+          <div className="mb-6">
+            <p className="text-gray-600">
+              Анализ оптимальных параметров запасов при различных сценариях развития спроса. 
+              Помогает оценить риски и возможности при изменении рыночной ситуации.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            {scenarios.map((scenario, index) => (
+              <div key={index} className={`border rounded-lg p-4 ${
+                scenario.name === 'Базовый' ? 'border-blue-500 bg-blue-50' : 
+                scenario.name === 'Пессимистичный' ? 'border-red-500 bg-red-50' : 
+                'border-green-500 bg-green-50'
+              }`}>
+                <h4 className="font-semibold mb-2">{scenario.name} сценарий</h4>
+                <div className="space-y-1 text-sm">
+                  <div>Спрос: {scenario.muWeekMultiplier > 1 ? '+' : ''}{((scenario.muWeekMultiplier - 1) * 100).toFixed(0)}%</div>
+                  <div>Волатильность: {scenario.sigmaWeekMultiplier > 1 ? '+' : ''}{((scenario.sigmaWeekMultiplier - 1) * 100).toFixed(0)}%</div>
+                  <div>Вероятность: {(scenario.probability * 100).toFixed(0)}%</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Товар</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase" colSpan={3}>
+                    Пессимистичный
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase" colSpan={3}>
+                    Базовый
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase" colSpan={3}>
+                    Оптимистичный
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                    Средневзвешенный
+                  </th>
+                </tr>
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-400"></th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-400">q*</th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-400">Value</th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-400">ROI</th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-400">q*</th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-400">Value</th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-400">ROI</th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-400">q*</th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-400">Value</th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-gray-400">ROI</th>
+                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-400">Value</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {productsWithMetrics.map((product) => {
+                  // Рассчитываем для каждого сценария
+                  const scenarioResults = scenarios.map(scenario => {
+                    const adjustedMuWeek = product.muWeek * scenario.muWeekMultiplier;
+                    const adjustedSigmaWeek = product.sigmaWeek * scenario.sigmaWeekMultiplier;
+                    
+                    let bestQ = 0, bestNet = -Infinity;
+                    const step = Math.max(1, Math.round(adjustedMuWeek / 10));
+                    const minQ = product.minOrderQty || 0;
+                    const maxQ = product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits;
+                    
+                    let effectiveWeeks = weeks;
+                    if (product.shelfLife && product.shelfLife > 0) {
+                      effectiveWeeks = Math.min(weeks, product.shelfLife);
+                    }
+                    
+                    for (let q = minQ; q <= maxQ; q += step) {
+                      const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
+                      const S = calculateExpectedRevenue(q, adjustedMuWeek, adjustedSigmaWeek, effectiveWeeks, effectivePurchase, product.margin, rushProb, rushSave);
+                      const K = q * effectivePurchase * (1 + r * effectiveWeeks / 52) + q * hold * effectiveWeeks;
+                      const T = effectiveWeeks / 52;
+                      const sigma = calculateVolatility(adjustedMuWeek, adjustedSigmaWeek, effectiveWeeks, q);
+                      const { optionValue } = blackScholes(S, K, T, sigma, r);
+                      
+                      if (optionValue > bestNet) { 
+                        bestNet = optionValue; 
+                        bestQ = q; 
+                      }
+                    }
+                    
+                    if (product.minOrderQty && bestQ < product.minOrderQty) {
+                      bestQ = product.minOrderQty;
+                    }
+                    
+                    const investment = bestQ * product.purchase;
+                    const roi = investment > 0 ? (bestNet / investment) * 100 : 0;
+                    
+                    return { q: bestQ, value: bestNet, roi };
+                  });
+                  
+                  const weightedValue = scenarioResults.reduce((sum, result, index) => 
+                    sum + result.value * scenarios[index].probability, 0
+                  );
+                  
+                  return (
+                    <tr key={product.id}>
+                      <td className="px-4 py-3 text-sm font-medium">{product.name}</td>
+                      {scenarioResults.map((result, index) => (
+                        <React.Fragment key={index}>
+                          <td className="px-2 py-3 text-sm text-center">{fmt(result.q)}</td>
+                          <td className={`px-2 py-3 text-sm text-center font-medium ${
+                            result.value > 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            ${fmt(result.value)}
+                          </td>
+                          <td className="px-2 py-3 text-sm text-center">{result.roi.toFixed(1)}%</td>
+                        </React.Fragment>
+                      ))}
+                      <td className={`px-4 py-3 text-sm text-center font-bold ${
+                        weightedValue > 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        ${fmt(weightedValue)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-500">
+            <h4 className="font-semibold text-yellow-800 mb-2">Как использовать результаты</h4>
+            <ul className="text-sm text-yellow-900 space-y-1 list-disc list-inside">
+              <li>Если оптимальные количества сильно различаются между сценариями - товар имеет высокий риск</li>
+              <li>Средневзвешенная ценность показывает ожидаемую выгоду с учетом всех сценариев</li>
+              <li>ROI помогает сравнить эффективность инвестиций в разные товары</li>
+              <li>Для товаров с отрицательной ценностью в пессимистичном сценарии рассмотрите минимальные заказы</li>
+            </ul>
+          </div>
+        </div>
+      )}
+      
+      {/* Вкладка Экспорт/Импорт */}
+      {activeTab === "dataIO" && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold mb-4">Экспорт и импорт данных</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="border rounded-lg p-4">
+              <h4 className="font-semibold mb-3">📤 Экспорт данных</h4>
+              <p className="text-sm text-gray-600 mb-4">
+                Скачайте текущий ассортимент и результаты оптимизации в формате CSV для анализа в Excel или других программах.
+              </p>
+              <button
+                onClick={exportToCSV}
+                className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300"
+                disabled={products.length === 0}
+              >
+                Скачать CSV файл
+              </button>
+              {products.length === 0 && (
+                <p className="text-sm text-red-500 mt-2">Добавьте товары для экспорта</p>
+              )}
+            </div>
+            
+            <div className="border rounded-lg p-4">
+              <h4 className="font-semibold mb-3">📥 Импорт данных</h4>
+              <p className="text-sm text-gray-600 mb-4">
+                Загрузите данные о товарах из CSV файла. Файл должен содержать колонки: SKU, Название, Закупочная цена, Маржа, Средний спрос/нед, Станд. откл./нед.
+              </p>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={importFromCSV}
+                className="hidden"
+                id="csv-upload"
+              />
+              <label
+                htmlFor="csv-upload"
+                className="block w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 cursor-pointer text-center"
+              >
+                Выбрать CSV файл
+              </label>
+            </div>
+          </div>
+          
+          <div className="mt-6 p-4 bg-gray-100 rounded-lg">
+            <h4 className="font-semibold mb-2">📋 Формат CSV файла</h4>
+            <div className="overflow-x-auto">
+              <table className="text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left pr-4">Колонка</th>
+                    <th className="text-left pr-4">Обязательная</th>
+                    <th className="text-left">Описание</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b">
+                    <td className="py-1 pr-4 font-mono">SKU</td>
+                    <td className="py-1 pr-4">✓</td>
+                    <td className="py-1">Уникальный код товара</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1 pr-4 font-mono">Название</td>
+                    <td className="py-1 pr-4">✓</td>
+                    <td className="py-1">Наименование товара</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1 pr-4 font-mono">Закупочная цена</td>
+                    <td className="py-1 pr-4">✓</td>
+                    <td className="py-1">Цена закупки у поставщика</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1 pr-4 font-mono">Маржа</td>
+                    <td className="py-1 pr-4">✓</td>
+                    <td className="py-1">Прибыль с единицы товара</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1 pr-4 font-mono">Средний спрос/нед</td>
+                    <td className="py-1 pr-4">✓</td>
+                    <td className="py-1">Ожидаемые продажи в неделю</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1 pr-4 font-mono">Станд. откл./нед</td>
+                    <td className="py-1 pr-4">✓</td>
+                    <td className="py-1">Волатильность спроса</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1 pr-4 font-mono">Срок годности (нед)</td>
+                    <td className="py-1 pr-4"></td>
+                    <td className="py-1">Максимальный срок хранения</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1 pr-4 font-mono">Мин. заказ</td>
+                    <td className="py-1 pr-4"></td>
+                    <td className="py-1">Минимальная партия заказа</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1 pr-4 font-mono">Макс. склад</td>
+                    <td className="py-1 pr-4"></td>
+                    <td className="py-1">Максимальная вместимость</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          <div className="mt-4 text-sm text-gray-500">
+            <p>💡 Совет: Сначала экспортируйте демо-данные, чтобы увидеть правильный формат файла.</p>
           </div>
         </div>
       )}

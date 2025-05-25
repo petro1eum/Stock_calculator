@@ -4,7 +4,9 @@ import {
   blackScholesCall, 
   monteCarloDemandLoss,
   calculateExpectedRevenue,
-  calculateVolatility
+  calculateVolatility,
+  getEffectivePurchasePrice,
+  VolumeDiscount
 } from './mathFunctions';
 
 describe('Mathematical Functions Tests', () => {
@@ -172,6 +174,52 @@ describe('Mathematical Functions Tests', () => {
       const volWithRush = calculateVolatility(100, 20, 4, 400, 0.5);
       expect(volWithRush).toBeLessThan(volNoRush);
       expect(volWithRush).toBeCloseTo(volNoRush * 0.9, 2); // 1 - 0.2 * 0.5
+    });
+  });
+  
+  describe('Volume Discount Pricing', () => {
+    it('should return base price when no discounts provided', () => {
+      const price = getEffectivePurchasePrice(100, 50);
+      expect(price).toBe(100);
+    });
+    
+    it('should return base price when quantity below discount threshold', () => {
+      const discounts: VolumeDiscount[] = [
+        { qty: 100, discount: 10 }
+      ];
+      const price = getEffectivePurchasePrice(100, 50, discounts);
+      expect(price).toBe(100);
+    });
+    
+    it('should apply discount when quantity meets threshold', () => {
+      const discounts: VolumeDiscount[] = [
+        { qty: 100, discount: 10 }
+      ];
+      const price = getEffectivePurchasePrice(100, 100, discounts);
+      expect(price).toBe(90); // 100 * (1 - 0.1)
+    });
+    
+    it('should apply highest applicable discount with multiple tiers', () => {
+      const discounts: VolumeDiscount[] = [
+        { qty: 50, discount: 5 },
+        { qty: 100, discount: 10 },
+        { qty: 200, discount: 15 }
+      ];
+      const price150 = getEffectivePurchasePrice(100, 150, discounts);
+      expect(price150).toBe(90); // 100 qty discount applies
+      
+      const price250 = getEffectivePurchasePrice(100, 250, discounts);
+      expect(price250).toBe(85); // 200 qty discount applies
+    });
+    
+    it('should handle unsorted discount tiers correctly', () => {
+      const discounts: VolumeDiscount[] = [
+        { qty: 200, discount: 15 },
+        { qty: 50, discount: 5 },
+        { qty: 100, discount: 10 }
+      ];
+      const price = getEffectivePurchasePrice(100, 150, discounts);
+      expect(price).toBe(90); // Should still find correct 10% discount
     });
   });
 });

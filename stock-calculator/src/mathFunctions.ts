@@ -152,4 +152,31 @@ export const calculateVolatility = (
   const rushFactor = 1 - 0.2 * rushProb;
   
   return Math.max(0.01, revenueVolatility * rushFactor);
+};
+
+// Интерфейс для скидок за объем
+export interface VolumeDiscount {
+  qty: number;
+  discount: number;
+}
+
+// Расчет эффективной цены закупки с учетом скидок за объем
+export const getEffectivePurchasePrice = (
+  basePrice: number, 
+  quantity: number, 
+  volumeDiscounts?: VolumeDiscount[]
+): number => {
+  if (!volumeDiscounts || volumeDiscounts.length === 0) {
+    return basePrice;
+  }
+  
+  // Сортируем скидки по количеству и находим применимую
+  const sortedDiscounts = [...volumeDiscounts].sort((a, b) => b.qty - a.qty);
+  const applicableDiscount = sortedDiscounts.find(d => quantity >= d.qty);
+  
+  if (applicableDiscount) {
+    return basePrice * (1 - applicableDiscount.discount / 100);
+  }
+  
+  return basePrice;
 }; 
