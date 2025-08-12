@@ -8,7 +8,12 @@ const WbKeyManager: React.FC = () => {
   const [error, setError] = React.useState<string | null>(null);
   const [testResult, setTestResult] = React.useState<any>(null);
 
-  const maskKey = (key?: string | null) => (key ? key.replace(/.(?=.{4})/g, '*') : null);
+  // Отображаем не всю длину ключа, а фиксированную маску + хвост
+  const maskKey = (key?: string | null) => {
+    if (!key) return null;
+    const tail = key.slice(-4);
+    return `••••••••••••${tail}`; // 12 точек + последние 4 символа
+  };
 
   const fetchMasked = React.useCallback(async () => {
     setError(null);
@@ -84,7 +89,12 @@ const WbKeyManager: React.FC = () => {
   return (
     <div className="space-y-2">
       {masked ? (
-        <div className="text-sm text-gray-700">Текущий ключ: <span className="font-mono">{masked}</span></div>
+        <div className="text-sm text-gray-700">
+          Текущий ключ:
+          <div className="mt-1 font-mono text-xs text-gray-600 bg-gray-50 rounded px-2 py-1 overflow-hidden text-ellipsis whitespace-nowrap">
+            {masked}
+          </div>
+        </div>
       ) : (
         <div className="text-sm text-gray-500">Ключ ещё не сохранён</div>
       )}
