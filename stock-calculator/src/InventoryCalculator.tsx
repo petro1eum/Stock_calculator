@@ -223,7 +223,6 @@ const InventoryOptionCalculator = () => {
       pts.push({ q, value: evaluateQ(q) });
     }
     // Эти значения не используются нигде в приложении, поэтому просто логируем для отладки
-<<<<<<< HEAD
     // Фиксируем, какой метод был применен фактически
     const expectedDemand = muWeek * weeks;
     const demandStd = sigmaWeek * Math.sqrt(weeks);
@@ -231,9 +230,7 @@ const InventoryOptionCalculator = () => {
     const method = (monteCarloParams.method === 'mc' || (monteCarloParams.method === 'auto' && cv > 1.0)) ? 'mc' : 'closed';
     setCalcMethodUsed(method);
     console.log('Оптимальные параметры: Q =', bestQ, ', Value =', bestNet, ', Safety =', calculatedSafety, ', Method =', method);
-=======
     console.log('Оптимальные параметры: Q =', bestQ, ', Value =', bestNet, ', Safety =', calculatedSafety);
->>>>>>> feba5701a4ce16c9be0fd3d343f2f4f1799a7d94
     setSeries(pts);
   }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, calculateExpectedRevenueWrapper, monteCarloParams]);
 

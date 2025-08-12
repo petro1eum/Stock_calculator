@@ -3,11 +3,7 @@ import { Product, Scenario } from '../types';
 import { PortfolioConstraints, PortfolioAllocation } from '../types/portfolio';
 import { formatNumber } from '../utils/mathFunctions';
 import { inverseNormal, blackScholesCall } from '../utils/mathFunctions';
-<<<<<<< HEAD
 import { calculateExpectedRevenue, calculateVolatility, mcDemandLoss, getEffectivePurchasePrice, optimizeQuantity } from '../utils/inventoryCalculations';
-=======
-import { calculateExpectedRevenue, calculateVolatility, mcDemandLoss, getEffectivePurchasePrice } from '../utils/inventoryCalculations';
->>>>>>> feba5701a4ce16c9be0fd3d343f2f4f1799a7d94
 import { PortfolioOptimizer } from '../utils/portfolioOptimization';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Scatter, ScatterChart } from 'recharts';
 
