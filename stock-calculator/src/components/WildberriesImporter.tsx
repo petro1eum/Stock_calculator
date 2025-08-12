@@ -132,7 +132,9 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
           warehouse: r.warehouseName || null,
           raw: r
         }));
-        await supabase.from('wb_sales').upsert(rows as any, { onConflict: 'user_id,sale_id' as any });
+        await supabase
+          .from('wb_sales')
+          .upsert(rows as any, { onConflict: 'user_id,sale_id' as any, ignoreDuplicates: true as any });
         return;
       }
 
@@ -147,7 +149,9 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
           warehouse: r.warehouse || r.warehouseName || null,
           raw: r
         }));
-        await supabase.from('wb_purchases').upsert(rows as any, { onConflict: 'user_id,income_id' as any });
+        await supabase
+          .from('wb_purchases')
+          .upsert(rows as any, { onConflict: 'user_id,income_id' as any, ignoreDuplicates: true as any });
         return;
       }
 
@@ -181,7 +185,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
 
         await supabase
           .from('wb_stocks')
-          .upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any });
+          .upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any, ignoreDuplicates: true as any });
         return;
       }
     } catch {}

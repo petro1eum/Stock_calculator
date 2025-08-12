@@ -48,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         warehouse: r.warehouseName || null,
         raw: r
       }});
-      const { error } = await admin.from('wb_sales').upsert(rows, { onConflict: 'user_id,sale_id' });
+      const { error } = await admin.from('wb_sales').upsert(rows, { onConflict: 'user_id,sale_id', ignoreDuplicates: true as any });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true, inserted: rows.length });
     }
@@ -64,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         warehouse: r.warehouse || null,
         raw: r
       }));
-      const { error } = await admin.from('wb_purchases').upsert(rows, { onConflict: 'user_id,income_id' });
+      const { error } = await admin.from('wb_purchases').upsert(rows, { onConflict: 'user_id,income_id', ignoreDuplicates: true as any });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true, inserted: rows.length });
     }
@@ -85,7 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         raw: r
       }));
       // Use composite conflict target to avoid duplicates on refreshes
-      const { error } = await admin.from('wb_stocks').upsert(rows, { onConflict: 'user_id,sku,barcode,date' });
+      const { error } = await admin.from('wb_stocks').upsert(rows, { onConflict: 'user_id,sku,barcode,date', ignoreDuplicates: true as any });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true, inserted: rows.length });
     }
@@ -102,7 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         address: r.address || null,
         raw: r
       }));
-      const { error } = await admin.from('wb_orders').upsert(rows, { onConflict: 'user_id,order_id' });
+      const { error } = await admin.from('wb_orders').upsert(rows, { onConflict: 'user_id,order_id', ignoreDuplicates: true as any });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true, inserted: rows.length });
     }
