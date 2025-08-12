@@ -27,21 +27,23 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
 
   const loadFromDB = async (table: 'wb_sales' | 'wb_stocks' | 'wb_purchases' | 'wb_orders') => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
         toast.error('Не авторизован');
         return [] as any[];
       }
-      const res = await fetch(`/api/db-load?table=${table}&limit=5000`, { headers: { Authorization: `Bearer ${token}` } });
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error(json.error || 'Ошибка загрузки из БД');
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .eq('user_id', user.id)
+        .limit(5000);
+      if (error) {
+        toast.error(error.message || 'Ошибка загрузки из БД');
         return [] as any[];
       }
-      return (json.rows || []) as any[];
+      return (data || []) as any[];
     } catch (e) {
-      toast.error('Ошибка сети при загрузке из БД');
+      toast.error('Ошибка загрузки из БД');
       return [] as any[];
     }
   };

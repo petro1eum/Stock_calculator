@@ -17,26 +17,82 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     return date.toISOString().split('T')[0];
   });
 
+  const safeSaveToDb = async (type: 'sales' | 'purchases' | 'stocks', records: any[]) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      let ok = false;
+      if (token) {
+        try {
+          const resp = await fetch('/api/db-save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ type, records })
+          });
+          ok = resp.ok;
+        } catch {}
+      }
+      if (!ok) {
+        // fallback: прямой upsert в supabase
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        if (type === 'sales') {
+          const rows = records.map((r: any) => ({
+            user_id: user.id,
+            date: r.date,
+            sku: String(r.nmId),
+            units: Number(r.quantity || 0),
+            revenue: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
+            sale_id: String(r.saleID || r.gNumber || r.srid || `${r.nmId || r.nmid}-${r.date}-${r.barcode || ''}`),
+            warehouse: r.warehouseName || null,
+            raw: r
+          }));
+          await supabase.from('wb_sales').upsert(rows, { onConflict: 'user_id,sale_id' as any });
+        }
+        if (type === 'purchases') {
+          const rows = records.map((r: any) => ({
+            user_id: user.id,
+            date: r.date,
+            sku: String(r.nmId),
+            quantity: Number(r.quantity || 0),
+            total_price: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
+            income_id: r.incomeId ? String(r.incomeId) : null,
+            warehouse: r.warehouse || null,
+            raw: r
+          }));
+          await supabase.from('wb_purchases').upsert(rows, { onConflict: 'user_id,income_id' as any });
+        }
+        if (type === 'stocks') {
+          const rows = records.map((r: any) => ({
+            user_id: user.id,
+            date: r.date,
+            sku: String(r.nmId),
+            barcode: r.barcode || null,
+            tech_size: r.techSize || null,
+            quantity: Number(r.quantity || 0),
+            in_way_to_client: Number(r.inWayToClient || 0),
+            in_way_from_client: Number(r.inWayFromClient || 0),
+            warehouse: r.warehouse || r.warehouseName || null,
+            price: r.price !== undefined ? Number(r.price) : null,
+            discount: r.discount !== undefined ? Number(r.discount) : null,
+            raw: r
+          }));
+          await supabase.from('wb_stocks').upsert(rows, { onConflict: 'user_id,sku,barcode,date' as any });
+        }
+      }
+    } catch {}
+  };
+
   const importSales = async () => {
     setLoading(true);
     setError(null);
     setResult(null);
-    
     try {
       const response = await fetch(`/api/wb-sales?dateFrom=${dateFrom}`);
       const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Ошибка получения данных');
-      }
-      
-      const res = {
-        type: 'sales',
-        count: data.sales?.length || 0,
-        data: data.sales
-      };
+      if (!response.ok) throw new Error(data.error || 'Ошибка получения данных');
+      const res = { type: 'sales', count: data.sales?.length || 0, data: data.sales };
       setResult(res);
-      // Автоприменение к товарам: пересчет спроса из исторических продаж
       if (onUpdateProducts && res.data && res.data.length > 0) {
         const salesRecords: SalesRecord[] = res.data.map((s: any) => ({
           date: s.date,
@@ -46,108 +102,34 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
         }));
         onUpdateProducts(prev => updateProductsFromSales(prev, salesRecords, { weeksWindow: 26 }));
       }
-
-      // Сохранить в Supabase (per-user)
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (token) {
-          await fetch('/api/db-save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ type: 'sales', records: res.data })
-          });
-        }
-      } catch {}
-      
-      // Здесь можно обновить продукты на основе продаж
-      // if (onUpdateProducts && data.sales) {
-      //   // Логика преобразования продаж в продукты...
-      // }
-      
+      await safeSaveToDb('sales', res.data || []);
     } catch (err: any) {
       setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const importPurchases = async () => {
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    
+    setLoading(true); setError(null); setResult(null);
     try {
       const response = await fetch(`/api/wb-purchases?dateFrom=${dateFrom}`);
       const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Ошибка получения данных');
-      }
-      
-      const res = {
-        type: 'purchases',
-        count: data.purchases?.length || 0,
-        data: data.purchases
-      };
+      if (!response.ok) throw new Error(data.error || 'Ошибка получения данных');
+      const res = { type: 'purchases', count: data.purchases?.length || 0, data: data.purchases };
       setResult(res);
-      // Сохранить в Supabase
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (token) {
-          await fetch('/api/db-save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ type: 'purchases', records: res.data })
-          });
-        }
-      } catch {}
-      
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+      await safeSaveToDb('purchases', res.data || []);
+    } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
 
   const importStocks = async () => {
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    
+    setLoading(true); setError(null); setResult(null);
     try {
       const response = await fetch(`/api/wb-stocks?dateFrom=${dateFrom}`);
       const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Ошибка получения данных');
-      }
-      
-      const res = {
-        type: 'stocks',
-        count: data.stocks?.length || 0,
-        data: data.stocks
-      };
+      if (!response.ok) throw new Error(data.error || 'Ошибка получения данных');
+      const res = { type: 'stocks', count: data.stocks?.length || 0, data: data.stocks };
       setResult(res);
-      // Сохранить в Supabase
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (token) {
-          await fetch('/api/db-save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ type: 'stocks', records: res.data })
-          });
-        }
-      } catch {}
-      
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+      await safeSaveToDb('stocks', res.data || []);
+    } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
 
   const importOrders = async () => {
