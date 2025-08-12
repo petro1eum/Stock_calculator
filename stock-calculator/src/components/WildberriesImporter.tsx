@@ -413,11 +413,12 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       </div>
 
       {/* Кнопки импорта */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <button onClick={importSales} disabled={loading} className="px-3 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">📈 Продажи</button>
-        <button onClick={importPurchases} disabled={loading} className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">📦 Поставки</button>
-        <button onClick={importStocks} disabled={loading} className="px-3 py-2 text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700 disabled:opacity-50">📊 Остатки</button>
-        <button onClick={downloadData} disabled={!result?.data} className="px-3 py-2 text-sm bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50">💾 Скачать</button>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <button onClick={importSales} disabled={loading} className="px-3 py-2 text-sm bg-green-700 text-white disabled:opacity-50">Продажи</button>
+        <button onClick={importPurchases} disabled={loading} className="px-3 py-2 text-sm bg-blue-700 text-white disabled:opacity-50">Поставки</button>
+        <button onClick={importStocks} disabled={loading} className="px-3 py-2 text-sm bg-yellow-700 text-white disabled:opacity-50">Остатки</button>
+        <button onClick={downloadData} disabled={!result?.data} className="px-3 py-2 text-sm bg-gray-700 text-white disabled:opacity-50">Скачать JSON</button>
+        <button onClick={() => setResult(null)} className="px-3 py-2 text-sm border">Очистить</button>
       </div>
 
       {loading && <div className="text-sm text-blue-600">Загружаем данные из Wildberries API...</div>}
