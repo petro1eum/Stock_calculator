@@ -432,163 +432,151 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-8">
-      {/* Header */}
-      <div className="mb-8 pb-4 border-b border-gray-300">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Data Management Console</h1>
-            <p className="text-gray-600 mt-1">Inventory data operations</p>
-          </div>
-          <div className="text-sm text-gray-600">
-            Products: {products.length}
-            {selectedWarehouse === 'wildberries' && ' | Wildberries: Connected'}
-          </div>
+    <div className="p-6">
+      
+      <div className="mb-6 pb-3 border-b">
+        <h1 className="text-xl font-medium text-black">Управление данными</h1>
+        <div className="text-sm text-gray-600 mt-1">
+          Товаров: {products.length}
+          {selectedWarehouse === 'wildberries' && ' • Wildberries подключен'}
         </div>
       </div>
 
-      {/* Main Operations Grid */}
-      <div className="grid grid-cols-12 gap-6">
+      <div className="space-y-8">
         
-        {/* Export Operations */}
-        <div className="col-span-6">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Export Operations</h3>
-          <div className="space-y-2">
+        {/* Экспорт */}
+        <div>
+          <h2 className="text-sm font-medium text-gray-700 mb-3">ЭКСПОРТ</h2>
+          <div className="flex gap-4">
             <button 
               onClick={exportToCSV} 
               disabled={products.length === 0}
-              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed font-medium text-gray-900"
+              className="px-4 py-2 bg-gray-800 text-white text-sm disabled:bg-gray-400"
             >
-              Export to CSV
+              Экспорт в CSV
             </button>
             <button 
               onClick={exportToJSON} 
               disabled={products.length === 0}
-              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed font-medium text-gray-900"
+              className="px-4 py-2 bg-gray-800 text-white text-sm disabled:bg-gray-400"
             >
-              Export to JSON
+              Экспорт в JSON
             </button>
           </div>
         </div>
 
-        {/* Import Operations */}
-        <div className="col-span-6">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Import Operations</h3>
-          <div className="space-y-2">
+        {/* Импорт товаров */}
+        <div>
+          <h2 className="text-sm font-medium text-gray-700 mb-3">ИМПОРТ ТОВАРОВ</h2>
+          <div className="flex gap-4">
             <div>
               <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" id="csv-import" />
-              <label htmlFor="csv-import" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
-                Import CSV Products
+              <label htmlFor="csv-import" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
+                Импорт CSV
               </label>
             </div>
             <div>
               <input type="file" accept=".json" onChange={importFromJSON} className="hidden" id="json-import" />
-              <label htmlFor="json-import" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
-                Import JSON Full
+              <label htmlFor="json-import" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
+                Импорт JSON
               </label>
             </div>
           </div>
         </div>
 
-        {/* Sales Data */}
-        <div className="col-span-4">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Sales Data</h3>
-          <div className="space-y-2">
+        {/* Продажи */}
+        <div>
+          <h2 className="text-sm font-medium text-gray-700 mb-3">ПРОДАЖИ</h2>
+          <div className="flex gap-4">
             <div>
               <input type="file" accept=".csv" onChange={importSalesCSV} className="hidden" id="sales-import" />
-              <label htmlFor="sales-import" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
-                Import Sales CSV
+              <label htmlFor="sales-import" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
+                Импорт CSV
               </label>
             </div>
             <div>
               <input type="file" accept=".xlsx,.xls" onChange={importSalesXLSX} className="hidden" id="sales-import-xlsx" />
-              <label htmlFor="sales-import-xlsx" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
-                Import Sales Excel
+              <label htmlFor="sales-import-xlsx" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
+                Импорт Excel
               </label>
             </div>
             <button 
               onClick={generateSampleCSV} 
-              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 font-medium text-gray-900"
+              className="px-4 py-2 bg-gray-800 text-white text-sm"
             >
-              Download Template
+              Скачать шаблон
             </button>
           </div>
         </div>
 
-        {/* Database Operations */}
-        <div className="col-span-4">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Database Operations</h3>
-          <div className="space-y-2">
+        {/* База данных */}
+        <div>
+          <h2 className="text-sm font-medium text-gray-700 mb-3">БАЗА ДАННЫХ</h2>
+          <div className="flex gap-4">
             <button 
               onClick={applySalesFromDB} 
-              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 font-medium text-gray-900"
+              className="px-4 py-2 bg-gray-800 text-white text-sm"
             >
-              Load Sales from DB
+              Загрузить продажи
             </button>
             <button 
               onClick={applyStocksFromDB} 
-              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 font-medium text-gray-900"
+              className="px-4 py-2 bg-gray-800 text-white text-sm"
             >
-              Load Stock from DB
+              Загрузить остатки
             </button>
           </div>
         </div>
 
-        {/* Wildberries Local Files */}
-        <div className="col-span-4">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Wildberries JSON</h3>
-          <div className="space-y-2">
+        {/* Wildberries JSON */}
+        <div>
+          <h2 className="text-sm font-medium text-gray-700 mb-3">WILDBERRIES JSON</h2>
+          <div className="flex gap-4">
             <div>
               <input type="file" accept=".json" onChange={importWBSalesJSON} className="hidden" id="wb-sales-json" />
-              <label htmlFor="wb-sales-json" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
-                Import Sales JSON
+              <label htmlFor="wb-sales-json" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
+                Продажи
               </label>
             </div>
             <div>
               <input type="file" accept=".json" onChange={importWBPurchasesJSON} className="hidden" id="wb-purchases-json" />
-              <label htmlFor="wb-purchases-json" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
-                Import Purchases JSON
+              <label htmlFor="wb-purchases-json" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
+                Поставки
               </label>
             </div>
             <div>
               <input type="file" accept=".json" onChange={importWBStocksJSON} className="hidden" id="wb-stocks-json" />
-              <label htmlFor="wb-stocks-json" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
-                Import Stock JSON
+              <label htmlFor="wb-stocks-json" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
+                Остатки
               </label>
             </div>
           </div>
         </div>
 
         {/* Wildberries API */}
-        <div className="col-span-12 mt-6">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-4">Wildberries API Integration</h3>
-          <div className="grid grid-cols-2 gap-8">
+        <div>
+          <h2 className="text-sm font-medium text-gray-700 mb-3">WILDBERRIES API</h2>
+          <div className="grid grid-cols-2 gap-6">
             <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-3">API Configuration</h4>
-              <div className="bg-gray-50 p-4 border border-gray-200">
+              <h3 className="text-xs text-gray-600 mb-2">Настройка API</h3>
+              <div className="border p-3 bg-gray-50">
                 <WbKeyManager />
               </div>
             </div>
             <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-3">Live Data Import</h4>
-              <div className="bg-gray-50 p-4 border border-gray-200">
+              <h3 className="text-xs text-gray-600 mb-2">Прямой импорт</h3>
+              <div className="border p-3 bg-gray-50">
                 <WildberriesImporter onUpdateProducts={setProducts} />
               </div>
             </div>
           </div>
         </div>
 
-        {/* System Notes */}
-        <div className="col-span-12 mt-6">
-          <div className="bg-gray-100 border border-gray-200 p-4">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">System Notes</h4>
-            <div className="text-xs text-gray-600 space-y-1">
-              <p>• Product imports replace current data completely</p>
-              <p>• Sales data recalculates demand parameters automatically</p>
-              <p>• Create backups before large imports</p>
-              <p>• CSV files must include proper headers</p>
-            </div>
-          </div>
+        {/* Примечания */}
+        <div className="text-xs text-gray-500 pt-4 border-t">
+          <p>• Импорт товаров заменяет текущие данные полностью</p>
+          <p>• Данные по продажам пересчитывают параметры спроса автоматически</p>
+          <p>• Создавайте резервные копии перед большими импортами</p>
         </div>
 
       </div>
