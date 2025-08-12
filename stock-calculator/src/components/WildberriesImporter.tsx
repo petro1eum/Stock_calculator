@@ -52,7 +52,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     let attempt = 0;
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const resp = await fetch(url, { headers: { Authorization: key } });
+      const resp = await fetch(url, { headers: { Authorization: key, Accept: 'application/json' } });
       const remainingHeader = resp.headers.get('x-ratelimit-remaining');
       const limitHeader = resp.headers.get('x-ratelimit-limit');
       const remaining = remainingHeader ? parseInt(remainingHeader, 10) : undefined;
@@ -76,7 +76,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       const ct = resp.headers.get('content-type') || '';
       if (!ct.includes('application/json')) {
         const txt = await resp.text();
-        throw new Error(`WB API вернул не-JSON ответ: ${txt.slice(0, 120)}`);
+        throw new Error(`WB API вернул не-JSON ответ: ${txt.slice(0, 200)}`);
       }
       const json = await resp.json();
       writeCache(url, json);

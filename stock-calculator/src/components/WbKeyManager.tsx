@@ -71,11 +71,16 @@ const WbKeyManager: React.FC = () => {
 
       const dateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const resp = await fetch(`https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`, {
-        headers: { Authorization: key }
+        headers: { Authorization: key, Accept: 'application/json' }
       });
       if (!resp.ok) {
         const txt = await resp.text();
         throw new Error(`WB API: ${resp.status} ${resp.statusText} ${txt.slice(0, 200)}`);
+      }
+      const ct = resp.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        const txt = await resp.text();
+        throw new Error(`WB API вернул не-JSON ответ: ${txt.slice(0, 200)}`);
       }
       const json = await resp.json();
       setTestResult({ success: true, salesCount: json?.length || 0, dateFrom, message: `Найдено ${json?.length || 0} продаж` });
