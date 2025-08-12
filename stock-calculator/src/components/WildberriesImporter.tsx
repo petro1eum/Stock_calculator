@@ -7,6 +7,8 @@ interface WildberriesImporterProps {
   onUpdateProducts?: React.Dispatch<React.SetStateAction<Product[]>>;
 }
 
+const API_BASE = (process.env.REACT_APP_API_BASE as string) || '';
+
 const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProducts }) => {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -17,6 +19,14 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     return date.toISOString().split('T')[0];
   });
 
+  const parseJsonStrict = async (resp: Response) => {
+    const ct = resp.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      throw new Error('Ответ не JSON. Проверьте REACT_APP_API_BASE для dev.');
+    }
+    return resp.json();
+  };
+
   const safeSaveToDb = async (type: 'sales' | 'purchases' | 'stocks', records: any[]) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -24,12 +34,20 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       let ok = false;
       if (token) {
         try {
-          const resp = await fetch('/api/db-save', {
+          const resp = await fetch(`${API_BASE}/api/db-save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ type, records })
           });
-          ok = resp.ok;
+          if (resp.ok) {
+            try {
+              const ct = resp.headers.get('content-type') || '';
+              if (ct.includes('application/json')) {
+                const json = await resp.json();
+                ok = Boolean(json && (json.ok === true || json.inserted >= 0));
+              }
+            } catch { ok = false; }
+          }
         } catch {}
       }
       if (!ok) {
@@ -88,8 +106,8 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     setError(null);
     setResult(null);
     try {
-      const response = await fetch(`/api/wb-sales?dateFrom=${dateFrom}`);
-      const data = await response.json();
+      const response = await fetch(`${API_BASE}/api/wb-sales?dateFrom=${dateFrom}`);
+      const data = await parseJsonStrict(response);
       if (!response.ok) throw new Error(data.error || 'Ошибка получения данных');
       const res = { type: 'sales', count: data.sales?.length || 0, data: data.sales };
       setResult(res);
@@ -111,8 +129,8 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
   const importPurchases = async () => {
     setLoading(true); setError(null); setResult(null);
     try {
-      const response = await fetch(`/api/wb-purchases?dateFrom=${dateFrom}`);
-      const data = await response.json();
+      const response = await fetch(`${API_BASE}/api/wb-purchases?dateFrom=${dateFrom}`);
+      const data = await parseJsonStrict(response);
       if (!response.ok) throw new Error(data.error || 'Ошибка получения данных');
       const res = { type: 'purchases', count: data.purchases?.length || 0, data: data.purchases };
       setResult(res);
@@ -123,8 +141,8 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
   const importStocks = async () => {
     setLoading(true); setError(null); setResult(null);
     try {
-      const response = await fetch(`/api/wb-stocks?dateFrom=${dateFrom}`);
-      const data = await response.json();
+      const response = await fetch(`${API_BASE}/api/wb-stocks?dateFrom=${dateFrom}`);
+      const data = await parseJsonStrict(response);
       if (!response.ok) throw new Error(data.error || 'Ошибка получения данных');
       const res = { type: 'stocks', count: data.stocks?.length || 0, data: data.stocks };
       setResult(res);
@@ -133,35 +151,17 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
   };
 
   const importOrders = async () => {
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    
+    setLoading(true); setError(null); setResult(null);
     try {
-      const response = await fetch('/api/wb-orders?limit=100&next=0');
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Ошибка получения данных');
-      }
-      
-      setResult({
-        type: 'orders',
-        count: data.orders?.length || 0,
-        total: data.total || 0,
-        data: data.orders
-      });
-      
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+      const response = await fetch(`${API_BASE}/api/wb-orders?limit=100&next=0`);
+      const data = await parseJsonStrict(response);
+      if (!response.ok) throw new Error(data.error || 'Ошибка получения данных');
+      setResult({ type: 'orders', count: data.orders?.length || 0, total: data.total || 0, data: data.orders });
+    } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
 
   const downloadData = () => {
     if (!result?.data) return;
-    
     const filename = `wb-${result.type}-${dateFrom}.json`;
     const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
