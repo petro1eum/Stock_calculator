@@ -1,6 +1,7 @@
 import React from 'react';
 import { Product, SalesRecord, PurchaseRecord, LogisticsRecord } from '../types';
 import { parseSalesCSV, parseSalesXLSX, updateProductsFromSales } from '../utils/inventoryCalculations';
+import WildberriesImporter from './WildberriesImporter';
 import toast from 'react-hot-toast';
 import { usePortfolioSettings } from '../contexts/PortfolioSettingsContext';
 
@@ -325,6 +326,12 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
           </div>
         </div>
         
+        {/* Wildberries API Integration */}
+        <div className="mt-6 p-4 bg-purple-50 border border-purple-200 rounded">
+          <h4 className="font-semibold mb-3 text-purple-800">📡 Импорт из Wildberries API</h4>
+          <WildberriesImporter onUpdateProducts={setProducts} />
+        </div>
+
         <div className="mt-6 p-4 bg-yellow-50 rounded-lg">
           <h5 className="font-medium text-yellow-800 mb-2">⚠️ Важно при импорте:</h5>
           <ul className="text-sm text-yellow-700 space-y-1">

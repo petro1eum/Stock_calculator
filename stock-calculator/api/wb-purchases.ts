@@ -15,11 +15,11 @@ function getWBApiKey(): string {
   }
 }
 
-// Реальный вызов WB API с ключом пользователя
-async function fetchWBSales(apiKey: string, dateFrom: string) {
+// Получение данных о поступлениях/закупках
+async function fetchWBPurchases(apiKey: string, dateFrom: string) {
   try {
-    // API продаж Wildberries
-    const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`, {
+    // API поступлений Wildberries (когда товар поступил на склад)
+    const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/incomes?dateFrom=${dateFrom}`, {
       headers: { 
         'Authorization': apiKey,
         'Content-Type': 'application/json'
@@ -33,22 +33,43 @@ async function fetchWBSales(apiKey: string, dateFrom: string) {
     const data = await response.json();
     
     // Преобразуем в наш формат
-    return data.map((sale: any) => ({
-      date: sale.date?.split('T')[0] || sale.date,
-      nmId: sale.nmId,
-      subject: sale.subject,
-      brand: sale.brand,
-      quantity: sale.quantity || 1,
-      totalPrice: sale.totalPrice || sale.finishedPrice,
-      saleID: sale.saleID || sale.gNumber
+    return data.map((income: any) => ({
+      date: income.date?.split('T')[0] || income.date,
+      nmId: income.nmId,
+      subject: income.subject,
+      brand: income.brand,
+      quantity: income.quantity || 1,
+      totalPrice: income.totalPrice || 0,
+      incomeId: income.incomeId,
+      warehouse: income.warehouseName,
+      status: income.status || 'accepted' // принят, в пути, и т.д.
     }));
   } catch (error: any) {
-    // В случае ошибки возвращаем тестовые данные для демонстрации
-    console.error('WB API Error:', error.message);
+    console.error('WB Purchases API Error:', error.message);
+    // Тестовые данные для демонстрации
     return [
-      { date: '2024-01-15', nmId: 12345, subject: 'Футболка', brand: 'TestBrand', quantity: 5, totalPrice: 2500, saleID: 'S123' },
-      { date: '2024-01-16', nmId: 12345, subject: 'Футболка', brand: 'TestBrand', quantity: 3, totalPrice: 1500, saleID: 'S124' },
-      { date: '2024-01-17', nmId: 67890, subject: 'Джинсы', brand: 'DenimCo', quantity: 2, totalPrice: 4000, saleID: 'S125' },
+      { 
+        date: '2024-01-10', 
+        nmId: 12345, 
+        subject: 'Футболка', 
+        brand: 'TestBrand', 
+        quantity: 100, 
+        totalPrice: 50000, 
+        incomeId: 'INC001',
+        warehouse: 'Коледино',
+        status: 'accepted'
+      },
+      { 
+        date: '2024-01-12', 
+        nmId: 67890, 
+        subject: 'Джинсы', 
+        brand: 'DenimCo', 
+        quantity: 50, 
+        totalPrice: 100000, 
+        incomeId: 'INC002',
+        warehouse: 'Подольск',
+        status: 'accepted'
+      },
     ];
   }
 }
@@ -66,8 +87,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ error: 'WB API key not configured in .env file' });
       }
 
-      const salesData = await fetchWBSales(apiKey, dateFrom);
-      return res.status(200).json({ sales: salesData });
+      const purchasesData = await fetchWBPurchases(apiKey, dateFrom);
+      return res.status(200).json({ purchases: purchasesData });
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
