@@ -91,80 +91,62 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
 
   const safeSaveToDb = async (type: 'sales' | 'purchases' | 'stocks', records: any[]) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      let ok = false;
-      if (token) {
-        try {
-          const resp = await fetch(`/api/db-save`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ type, records })
-          });
-          if (resp.ok) {
-            try {
-              const ct = resp.headers.get('content-type') || '';
-              if (ct.includes('application/json')) {
-                const json = await resp.json();
-                ok = Boolean(json && (json.ok === true || json.inserted >= 0));
-              }
-            } catch { ok = false; }
-          }
-        } catch {}
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      if (type === 'sales') {
+        const rows = records.map((r: any) => ({
+          user_id: user.id,
+          date: r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date,
+          sku: String(r.nmId),
+          units: Number(r.quantity || 0),
+          revenue: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
+          sale_id: String(r.saleID || r.gNumber || r.srid || `${r.nmId || r.nmid}-${r.date}-${r.barcode || ''}`),
+          warehouse: r.warehouseName || null,
+          raw: r
+        }));
+        await supabase.from('wb_sales').upsert(rows as any, { onConflict: 'user_id,sale_id' as any });
+        return;
       }
-      if (!ok) {
-        // fallback: прямой upsert в supabase
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        if (type === 'sales') {
-          const rows = records.map((r: any) => ({
+
+      if (type === 'purchases') {
+        const rows = records.map((r: any) => ({
+          user_id: user.id,
+          date: r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date,
+          sku: String(r.nmId),
+          quantity: Number(r.quantity || 0),
+          total_price: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
+          income_id: r.incomeId ? String(r.incomeId) : String(`${r.nmId}-${r.date}`),
+          warehouse: r.warehouse || r.warehouseName || null,
+          raw: r
+        }));
+        await supabase.from('wb_purchases').upsert(rows as any, { onConflict: 'user_id,income_id' as any });
+        return;
+      }
+
+      if (type === 'stocks') {
+        const rows = records.map((r: any) => {
+          const isoDate = r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date;
+          const barcode = (r.barcode !== undefined && r.barcode !== null && String(r.barcode).trim() !== '')
+            ? String(r.barcode)
+            : String(r.nmId || r.nmid || 'NO_BARCODE');
+          return {
             user_id: user.id,
-            date: r.date,
+            date: isoDate,
             sku: String(r.nmId),
-            units: Number(r.quantity || 0),
-            revenue: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
-            sale_id: String(r.saleID || r.gNumber || r.srid || `${r.nmId || r.nmid}-${r.date}-${r.barcode || ''}`),
-            warehouse: r.warehouseName || null,
-            raw: r
-          }));
-          await supabase.from('wb_sales').upsert(rows as any, { onConflict: 'user_id,sale_id' as any });
-        }
-        if (type === 'purchases') {
-          const rows = records.map((r: any) => ({
-            user_id: user.id,
-            date: r.date,
-            sku: String(r.nmId),
+            barcode,
+            tech_size: r.techSize !== undefined && r.techSize !== null ? String(r.techSize) : null,
             quantity: Number(r.quantity || 0),
-            total_price: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
-            income_id: r.incomeId ? String(r.incomeId) : null,
+            in_way_to_client: Number(r.inWayToClient || 0),
+            in_way_from_client: Number(r.inWayFromClient || 0),
             warehouse: r.warehouse || r.warehouseName || null,
+            price: r.price !== undefined ? Number(r.price) : (r.Price !== undefined ? Number(r.Price) : null),
+            discount: r.discount !== undefined ? Number(r.discount) : (r.Discount !== undefined ? Number(r.Discount) : null),
             raw: r
-          }));
-          await supabase.from('wb_purchases').upsert(rows as any, { onConflict: 'user_id,income_id' as any });
-        }
-        if (type === 'stocks') {
-          const rows = records.map((r: any) => {
-            const isoDate = r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date;
-            const barcode = (r.barcode !== undefined && r.barcode !== null && String(r.barcode).trim() !== '')
-              ? String(r.barcode)
-              : String(r.nmId || r.nmid || 'NO_BARCODE');
-            return {
-              user_id: user.id,
-              date: isoDate,
-              sku: String(r.nmId),
-              barcode,
-              tech_size: r.techSize !== undefined && r.techSize !== null ? String(r.techSize) : null,
-              quantity: Number(r.quantity || 0),
-              in_way_to_client: Number(r.inWayToClient || 0),
-              in_way_from_client: Number(r.inWayFromClient || 0),
-              warehouse: r.warehouse || r.warehouseName || null,
-              price: r.price !== undefined ? Number(r.price) : (r.Price !== undefined ? Number(r.Price) : null),
-              discount: r.discount !== undefined ? Number(r.discount) : (r.Discount !== undefined ? Number(r.Discount) : null),
-              raw: r
-            };
-          });
-          await supabase.from('wb_stocks').upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any });
-        }
+          };
+        });
+        await supabase.from('wb_stocks').upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any });
+        return;
       }
     } catch {}
   };
