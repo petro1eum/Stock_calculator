@@ -159,16 +159,34 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       }
 
       if (type === 'purchases') {
-        const rows = records.map((r: any) => ({
-          user_id: user.id,
-          date: r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date,
-          sku: String(r.nmId),
-          quantity: Number(r.quantity || 0),
-          total_price: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
-          income_id: r.incomeId ? String(r.incomeId) : String(`${r.nmId}-${r.date}`),
-          warehouse: r.warehouse || r.warehouseName || null,
-          raw: r
-        }));
+        // В WB в одной поставке (incomeId) может быть несколько позиций (nmId).
+        // Наша таблица имеет PK (user_id, income_id), поэтому агрегируем по income_id.
+        const aggregated = new Map<string, any>();
+        for (const r of records as any[]) {
+          const incomeId = r.incomeId ? String(r.incomeId) : String(`${r.nmId}-${r.date}`);
+          const key = incomeId;
+          const date = r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date;
+          const warehouse = r.warehouse || r.warehouseName || null;
+          const qty = Number(r.quantity || 0);
+          const price = r.totalPrice !== undefined ? Number(r.totalPrice) : 0;
+          if (!aggregated.has(key)) {
+            aggregated.set(key, {
+              user_id: user.id,
+              date,
+              sku: String(r.nmId), // первая позиция в поставке
+              quantity: 0,
+              total_price: 0,
+              income_id: incomeId,
+              warehouse,
+              raw: [r]
+            });
+          }
+          const row = aggregated.get(key);
+          row.quantity += qty;
+          row.total_price += price;
+          row.raw.push(r);
+        }
+        const rows = Array.from(aggregated.values());
         const ids = rows.map(r => r.income_id);
         const existing = await fetchExistingByIds('wb_purchases', 'income_id', ids, user.id);
         const onlyNew = rows.filter(r => !existing.has(r.income_id));
