@@ -487,10 +487,18 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     try {
       const key = await getWbKey();
       if (!key) throw new Error('Сначала сохраните ключ WB в настройках пользователя');
-      // Соберем период
-      const begin = `${dateFrom} 00:00:00`;
-      const now = new Date();
+      // Соберем период (WB требует формат YYYY-MM-DD HH:mm:ss без таймзоны и ограничивает глубину периода)
       const pad = (n: number) => String(n).padStart(2, '0');
+      const now = new Date();
+      const maxDepthDays = 30; // безопасно: до 30 дней назад
+      const minAllowed = new Date();
+      minAllowed.setDate(minAllowed.getDate() - maxDepthDays);
+      const beginDate = (() => {
+        const d = new Date(`${dateFrom}T00:00:00`);
+        if (isNaN(d.getTime())) return minAllowed;
+        return d < minAllowed ? minAllowed : d;
+      })();
+      const begin = `${beginDate.getFullYear()}-${pad(beginDate.getMonth() + 1)}-${pad(beginDate.getDate())} 00:00:00`;
       const end = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
       const url = `https://seller-analytics-api.wildberries.ru/api/v2/nm-report/detail`;
       const body = { period: { begin, end }, page: 1 };
