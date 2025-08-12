@@ -15,6 +15,7 @@ import {
   MoonIcon
 } from '@heroicons/react/24/outline';
 import { Toaster } from 'react-hot-toast';
+import UserMenu from './UserMenu';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -208,7 +209,7 @@ const Layout: React.FC<LayoutProps> = ({
           </button>
 
           {/* Breadcrumb */}
-          <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
+          <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6 items-center">
             <div className="flex items-center gap-x-2">
               <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                 {activeTab === 'dashboard' ? 'Главная' : 'Главная /'}
@@ -219,6 +220,7 @@ const Layout: React.FC<LayoutProps> = ({
                 </span>
               )}
             </div>
+            <UserMenu />
           </div>
         </div>
 
