@@ -21,9 +21,9 @@ async function fetchWBSales(apiKey: string, dateFrom: string) {
   console.log(`[WB Sales API] Using API key: ${apiKey.substring(0, 20)}...`);
   
   // API продаж Wildberries
-  const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`, {
+  const response = await fetch(`https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`, {
     headers: { 
-      'Authorization': apiKey,
+      'Authorization': apiKey, // Без Bearer префикса, как в официальной документации
       'Content-Type': 'application/json'
     }
   });

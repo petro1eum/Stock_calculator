@@ -20,7 +20,7 @@ async function fetchWBStocks(apiKey: string, dateFrom: string) {
   console.log(`[WB Stocks API] Calling with dateFrom: ${dateFrom}`);
   
   // API остатков Wildberries (текущие остатки на складах)
-  const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${dateFrom}`, {
+  const response = await fetch(`https://statistics-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${dateFrom}`, {
     headers: { 
       'Authorization': apiKey,
       'Content-Type': 'application/json'

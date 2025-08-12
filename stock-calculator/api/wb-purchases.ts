@@ -20,7 +20,7 @@ async function fetchWBPurchases(apiKey: string, dateFrom: string) {
   console.log(`[WB Purchases API] Calling with dateFrom: ${dateFrom}`);
   
   // API поступлений Wildberries (когда товар поступил на склад)
-  const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/incomes?dateFrom=${dateFrom}`, {
+  const response = await fetch(`https://statistics-api.wildberries.ru/api/v1/supplier/incomes?dateFrom=${dateFrom}`, {
     headers: { 
       'Authorization': apiKey,
       'Content-Type': 'application/json'

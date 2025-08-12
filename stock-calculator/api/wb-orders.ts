@@ -20,7 +20,7 @@ async function fetchWBOrders(apiKey: string, limit: number = 100, next: number =
   console.log(`[WB Orders API] Calling with limit: ${limit}, next: ${next}`);
   
   // API заказов Wildberries (сборочные задания)
-  const response = await fetch(`https://suppliers-api.wildberries.ru/api/v3/orders?limit=${limit}&next=${next}`, {
+  const response = await fetch(`https://marketplace-api.wildberries.ru/api/v3/orders?limit=${limit}&next=${next}`, {
     headers: { 
       'Authorization': apiKey,
       'Content-Type': 'application/json'
@@ -65,7 +65,7 @@ async function fetchWBOrders(apiKey: string, limit: number = 100, next: number =
 async function updateOrderStatus(apiKey: string, orderId: number, status: string) {
   console.log(`[WB Orders API] Updating order ${orderId} to status: ${status}`);
   
-  const response = await fetch(`https://suppliers-api.wildberries.ru/api/v3/orders/${orderId}/status`, {
+  const response = await fetch(`https://marketplace-api.wildberries.ru/api/v3/orders/${orderId}/status`, {
     method: 'PATCH',
     headers: { 
       'Authorization': apiKey,
