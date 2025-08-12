@@ -8,16 +8,20 @@ const WbKeyManager: React.FC = () => {
   const [error, setError] = React.useState<string | null>(null);
   const [testResult, setTestResult] = React.useState<any>(null);
 
+  const maskKey = (key?: string | null) => (key ? key.replace(/.(?=.{4})/g, '*') : null);
+
   const fetchMasked = React.useCallback(async () => {
     setError(null);
     try {
-      const { data: sessionRes } = await supabase.auth.getSession();
-      const token = sessionRes.session?.access_token;
-      if (!token) return;
-      const res = await fetch('/api/wb-key', { headers: { Authorization: `Bearer ${token}` } });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Ошибка');
-      setMasked(json.wbApiKeyMasked || null);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('user_secrets')
+        .select('wb_api_key, updated_at')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (error) throw error;
+      setMasked(maskKey(data?.wb_api_key));
     } catch (e: any) {
       setError(e.message);
     }
@@ -29,16 +33,12 @@ const WbKeyManager: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data: sessionRes } = await supabase.auth.getSession();
-      const token = sessionRes.session?.access_token;
-      if (!token) throw new Error('Не авторизован');
-      const res = await fetch('/api/wb-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ wbApiKey: value })
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Ошибка сохранения');
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Не авторизован');
+      const { error } = await supabase
+        .from('user_secrets')
+        .upsert({ user_id: user.id, wb_api_key: value, updated_at: new Date().toISOString() });
+      if (error) throw error;
       setValue('');
       await fetchMasked();
     } catch (e: any) {
@@ -53,29 +53,29 @@ const WbKeyManager: React.FC = () => {
     setError(null);
     setTestResult(null);
     try {
-      const { data: sessionRes } = await supabase.auth.getSession();
-      const token = sessionRes.session?.access_token;
-      if (!token) throw new Error('Не авторизован');
-      
-      // Тест получения продаж за последние 30 дней
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Не авторизован');
+      const { data, error } = await supabase
+        .from('user_secrets')
+        .select('wb_api_key')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (error) throw error;
+      const key = data?.wb_api_key as string | undefined;
+      if (!key) throw new Error('Ключ не найден');
+
       const dateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const res = await fetch(`/api/wb-sales?dateFrom=${dateFrom}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      const resp = await fetch(`https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`, {
+        headers: { Authorization: key }
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Ошибка API');
-      
-      setTestResult({
-        success: true,
-        salesCount: json.sales?.length || 0,
-        dateFrom,
-        message: `Найдено ${json.sales?.length || 0} продаж за период с ${dateFrom}`
-      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`WB API: ${resp.status} ${resp.statusText} ${txt.slice(0, 200)}`);
+      }
+      const json = await resp.json();
+      setTestResult({ success: true, salesCount: json?.length || 0, dateFrom, message: `Найдено ${json?.length || 0} продаж` });
     } catch (e: any) {
-      setTestResult({
-        success: false,
-        message: e.message
-      });
+      setTestResult({ success: false, message: e.message });
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,7 @@ const WbKeyManager: React.FC = () => {
           {testResult.message}
         </div>
       )}
-      <p className="text-xs text-gray-500">Ключ хранится на сервере в зашифрованном виде (в Supabase). В интерфейсе показывается только маска.</p>
+      <p className="text-xs text-gray-500">Ключ хранится в Supabase в вашей записи. В интерфейсе показывается только маска.</p>
     </div>
   );
 };
