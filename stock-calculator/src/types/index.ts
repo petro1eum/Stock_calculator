@@ -40,6 +40,8 @@ export interface Product {
   supplier?: string;
   category?: string;
   volume?: number; // объем единицы товара для складских расчетов
+  // Разбивка остатков по складам WB: { "Коледино": 12, "Казань": 5 }
+  stockByWarehouse?: Record<string, number>;
   // История продаж/закупок/логистики (опционально)
   salesHistory?: SalesRecord[];
   purchaseHistory?: PurchaseRecord[];

@@ -503,18 +503,18 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       const url = `https://seller-analytics-api.wildberries.ru/api/v2/nm-report/detail`;
       const body = { period: { begin, end }, page: 1 };
       const data = await postWithRetry(url, key, body);
-      const list = data?.data || data || [];
+      const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
       await safeSaveToDb('analytics', list);
       // обновим имя/категорию
       if (onUpdateProducts) {
         onUpdateProducts(prev => prev.map(p => {
-          const g = (list as any[]).find((x: any) => String(x.nmID ?? x.nmId) === p.sku);
+          const g = list.find((x: any) => String(x.nmID ?? x.nmId) === p.sku);
           const name = g?.vendorCode || p.name;
           const category = g?.object?.name || p.category;
           return { ...p, name, category };
         }));
       }
-      setResult({ type: 'analytics', count: Array.isArray(list) ? list.length : 0, data: list });
+      setResult({ type: 'analytics', count: list.length, data: list });
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
   };
 

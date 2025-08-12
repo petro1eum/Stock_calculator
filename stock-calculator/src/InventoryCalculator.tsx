@@ -486,10 +486,10 @@ const InventoryOptionCalculator = () => {
         if (!user) return;
         if (products.length > 0) return;
 
-        // 1) Остатки -> currentStock и автосоздание карточек
+        // 1) Остатки -> currentStock, разрез по складам и автосоздание карточек
         const { data: stocks, error: stocksErr } = await supabase
           .from('wb_stocks')
-          .select('sku, quantity, raw')
+          .select('sku, quantity, warehouse, raw')
           .eq('user_id', user.id)
           .limit(10000);
         if (stocksErr) return;
@@ -497,6 +497,7 @@ const InventoryOptionCalculator = () => {
         const totals = new Map<string, number>();
         const subjBySku = new Map<string, string>();
         const nameBySku = new Map<string, string>();
+        const byWarehouse = new Map<string, Map<string, number>>(); // sku -> (warehouse -> qty)
         (stocks || []).forEach((r: any) => {
           const sku = String(r.sku);
           const qty = Number(r.quantity || 0);
@@ -505,6 +506,9 @@ const InventoryOptionCalculator = () => {
           const name = typeof r.raw?.name === 'string' ? r.raw.name : undefined;
           if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
           if (name && !nameBySku.has(sku)) nameBySku.set(sku, name);
+          const wh = r.warehouse || r.raw?.warehouseName || 'Склад WB';
+          if (!byWarehouse.has(sku)) byWarehouse.set(sku, new Map());
+          const m = byWarehouse.get(sku)!; m.set(wh, (m.get(wh) || 0) + qty);
         });
 
         const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
@@ -521,13 +525,47 @@ const InventoryOptionCalculator = () => {
           optValue: 0,
           safety: 0,
           currentStock: totals.get(sku) || 0,
+          stockByWarehouse: (() => {
+            const m = byWarehouse.get(sku) || new Map<string, number>();
+            const obj: Record<string, number> = {};
+            m.forEach((v, k) => { obj[k] = v; });
+            return obj;
+          })(),
           seasonality: baseSeasonality,
           currency: 'RUB',
           supplier: 'domestic',
           category: ''
         }));
 
-        // 2) Продажи -> пересчет mu/sigma и метрик
+        // 2) Обогащение названий/категорий из цен/аналитики WB
+        try {
+          const { data: prices } = await supabase
+            .from('wb_prices')
+            .select('nm_id, raw')
+            .eq('user_id', user.id)
+            .limit(50000);
+          (prices || []).forEach((p: any) => {
+            const sku = String(p.nm_id);
+            const vendor = typeof p.raw?.vendorCode === 'string' ? p.raw.vendorCode : undefined;
+            if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
+          });
+        } catch {}
+        try {
+          const { data: an } = await supabase
+            .from('wb_analytics')
+            .select('nm_id, raw')
+            .eq('user_id', user.id)
+            .limit(50000);
+          (an || []).forEach((a: any) => {
+            const sku = String(a.nm_id);
+            const vendor = typeof a.raw?.vendorCode === 'string' ? a.raw.vendorCode : undefined;
+            const cat = typeof a.raw?.object?.name === 'string' ? a.raw.object.name : undefined;
+            if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
+            if (cat) subjBySku.set(sku, cat);
+          });
+        } catch {}
+
+        // 3) Продажи -> пересчет mu/sigma и метрик
         const { data: sales, error: salesErr } = await supabase
           .from('wb_sales')
           .select('date, sku, units, revenue')
