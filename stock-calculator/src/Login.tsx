@@ -41,6 +41,9 @@ const Login: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="w-full max-w-sm bg-white rounded-lg shadow p-6">
         <h1 className="text-xl font-semibold mb-4 text-center">Вход</h1>
+        <p className="text-xs text-gray-500 text-center mb-3">
+          Доступ ограничен. Если ваш email не в списке разрешённых — вход будет отклонён.
+        </p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="block text-sm text-gray-700 mb-1">Email</label>
