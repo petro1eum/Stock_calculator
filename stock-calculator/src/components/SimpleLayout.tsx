@@ -25,6 +25,12 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
     { id: 'theory', name: 'Теория' },
   ];
 
+  const handleLogout = async () => {
+    const { supabase } = await import('../utils/supabaseClient');
+    await supabase.auth.signOut();
+    window.location.reload();
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Простая навигация сверху */}
@@ -32,7 +38,7 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <h1 className="text-xl font-bold">StockOptim</h1>
-            <nav className="flex space-x-4">
+            <nav className="flex items-center space-x-4">
               {navigation.map((item) => (
                 <button
                   key={item.id}
@@ -54,6 +60,9 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
                   )}
                 </button>
               ))}
+              <button onClick={handleLogout} className="ml-2 px-3 py-2 rounded-md text-sm font-medium bg-red-500 text-white hover:bg-red-600">
+                Выйти
+              </button>
             </nav>
           </div>
         </div>
