@@ -432,157 +432,165 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-8">
+    <div className="max-w-5xl mx-auto p-8">
       {/* Header */}
-      <div className="border-b border-gray-200 pb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Data Management</h1>
-        <div className="mt-2 flex items-center justify-between">
-          <p className="text-gray-600">Import, export and manage your inventory data</p>
-          <div className="text-sm text-gray-500">
-            Products: <span className="font-semibold text-gray-900">{products.length}</span>
-            {selectedWarehouse === 'wildberries' && (
-              <span className="ml-4 text-green-600 font-medium">• Wildberries Connected</span>
-            )}
+      <div className="mb-8 pb-4 border-b border-gray-300">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Data Management Console</h1>
+            <p className="text-gray-600 mt-1">Inventory data operations</p>
+          </div>
+          <div className="text-sm text-gray-600">
+            Products: {products.length}
+            {selectedWarehouse === 'wildberries' && ' | Wildberries: Connected'}
           </div>
         </div>
       </div>
 
-      {/* Export Section */}
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Export Data</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button 
-            onClick={exportToCSV} 
-            disabled={products.length === 0}
-            className="px-6 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
-          >
-            Export to CSV
-          </button>
-          <button 
-            onClick={exportToJSON} 
-            disabled={products.length === 0}
-            className="px-6 py-4 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
-          >
-            Export to JSON
-          </button>
+      {/* Main Operations Grid */}
+      <div className="grid grid-cols-12 gap-6">
+        
+        {/* Export Operations */}
+        <div className="col-span-6">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Export Operations</h3>
+          <div className="space-y-2">
+            <button 
+              onClick={exportToCSV} 
+              disabled={products.length === 0}
+              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed font-medium text-gray-900"
+            >
+              Export to CSV
+            </button>
+            <button 
+              onClick={exportToJSON} 
+              disabled={products.length === 0}
+              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed font-medium text-gray-900"
+            >
+              Export to JSON
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* Import Section */}
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Import Data</h2>
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Import Operations */}
+        <div className="col-span-6">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Import Operations</h3>
+          <div className="space-y-2">
             <div>
               <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" id="csv-import" />
-              <label htmlFor="csv-import" className="block w-full px-6 py-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 cursor-pointer font-medium text-center">
+              <label htmlFor="csv-import" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
                 Import CSV Products
               </label>
             </div>
             <div>
               <input type="file" accept=".json" onChange={importFromJSON} className="hidden" id="json-import" />
-              <label htmlFor="json-import" className="block w-full px-6 py-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 cursor-pointer font-medium text-center">
+              <label htmlFor="json-import" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
                 Import JSON Full
               </label>
             </div>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        </div>
+
+        {/* Sales Data */}
+        <div className="col-span-4">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Sales Data</h3>
+          <div className="space-y-2">
             <div>
               <input type="file" accept=".csv" onChange={importSalesCSV} className="hidden" id="sales-import" />
-              <label htmlFor="sales-import" className="block w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-center">
-                Sales CSV
+              <label htmlFor="sales-import" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
+                Import Sales CSV
               </label>
             </div>
             <div>
               <input type="file" accept=".xlsx,.xls" onChange={importSalesXLSX} className="hidden" id="sales-import-xlsx" />
-              <label htmlFor="sales-import-xlsx" className="block w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 cursor-pointer font-medium text-center">
-                Sales Excel
+              <label htmlFor="sales-import-xlsx" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
+                Import Sales Excel
               </label>
             </div>
             <button 
               onClick={generateSampleCSV} 
-              className="px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-medium"
+              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 font-medium text-gray-900"
             >
               Download Template
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Database Section */}
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Database Operations</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button 
-            onClick={applySalesFromDB} 
-            className="px-6 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
-          >
-            Load Sales from Database
-          </button>
-          <button 
-            onClick={applyStocksFromDB} 
-            className="px-6 py-4 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 font-medium"
-          >
-            Load Stock from Database
-          </button>
-        </div>
-      </div>
-
-      {/* Wildberries Section */}
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Wildberries Integration</h2>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-3">API Configuration</h3>
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <WbKeyManager />
-            </div>
-          </div>
-          
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Live Import</h3>
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <WildberriesImporter onUpdateProducts={setProducts} />
-            </div>
+        {/* Database Operations */}
+        <div className="col-span-4">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Database Operations</h3>
+          <div className="space-y-2">
+            <button 
+              onClick={applySalesFromDB} 
+              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 font-medium text-gray-900"
+            >
+              Load Sales from DB
+            </button>
+            <button 
+              onClick={applyStocksFromDB} 
+              className="w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 font-medium text-gray-900"
+            >
+              Load Stock from DB
+            </button>
           </div>
         </div>
 
-        <div className="mt-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-3">Local JSON Files</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Wildberries Local Files */}
+        <div className="col-span-4">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Wildberries JSON</h3>
+          <div className="space-y-2">
             <div>
               <input type="file" accept=".json" onChange={importWBSalesJSON} className="hidden" id="wb-sales-json" />
-              <label htmlFor="wb-sales-json" className="block w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-center">
-                Sales JSON
+              <label htmlFor="wb-sales-json" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
+                Import Sales JSON
               </label>
             </div>
             <div>
               <input type="file" accept=".json" onChange={importWBPurchasesJSON} className="hidden" id="wb-purchases-json" />
-              <label htmlFor="wb-purchases-json" className="block w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer font-medium text-center">
-                Purchases JSON
+              <label htmlFor="wb-purchases-json" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
+                Import Purchases JSON
               </label>
             </div>
             <div>
               <input type="file" accept=".json" onChange={importWBStocksJSON} className="hidden" id="wb-stocks-json" />
-              <label htmlFor="wb-stocks-json" className="block w-full px-4 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 cursor-pointer font-medium text-center">
-                Stock JSON
+              <label htmlFor="wb-stocks-json" className="block w-full px-4 py-3 text-left bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer font-medium text-gray-900">
+                Import Stock JSON
               </label>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Important Notes */}
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-yellow-900 mb-3">Important Notes</h3>
-        <ul className="text-sm text-yellow-800 space-y-1">
-          <li>• Product imports replace current data completely</li>
-          <li>• Sales data recalculates demand parameters automatically</li>
-          <li>• Always create backups before large imports</li>
-          <li>• CSV files must include proper headers</li>
-        </ul>
+        {/* Wildberries API */}
+        <div className="col-span-12 mt-6">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-4">Wildberries API Integration</h3>
+          <div className="grid grid-cols-2 gap-8">
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-3">API Configuration</h4>
+              <div className="bg-gray-50 p-4 border border-gray-200">
+                <WbKeyManager />
+              </div>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-3">Live Data Import</h4>
+              <div className="bg-gray-50 p-4 border border-gray-200">
+                <WildberriesImporter onUpdateProducts={setProducts} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* System Notes */}
+        <div className="col-span-12 mt-6">
+          <div className="bg-gray-100 border border-gray-200 p-4">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">System Notes</h4>
+            <div className="text-xs text-gray-600 space-y-1">
+              <p>• Product imports replace current data completely</p>
+              <p>• Sales data recalculates demand parameters automatically</p>
+              <p>• Create backups before large imports</p>
+              <p>• CSV files must include proper headers</p>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );
