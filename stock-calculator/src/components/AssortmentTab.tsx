@@ -31,6 +31,13 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
   selectProductForAnalysis
 }) => {
   const [newDiscount, setNewDiscount] = useState({ qty: 0, discount: 0 });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const pageItems = products.slice(start, end);
 
   const addVolumeDiscount = () => {
     if (newDiscount.qty > 0 && newDiscount.discount > 0) {
@@ -444,6 +451,7 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Название</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Категория</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Закуп, $</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Маржа, $</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Спрос нед.</th>
@@ -455,10 +463,11 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {products.map((product) => (
+                {pageItems.map((product) => (
                   <tr key={product.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.sku}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.category || ''}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.purchase.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.margin.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -505,6 +514,38 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                 ))}
               </tbody>
             </table>
+          </div>
+          {/* Пагинация */}
+          <div className="flex items-center justify-between p-3 border-t bg-gray-50">
+            <div className="text-sm text-gray-600">
+              Показано {start + 1}-{Math.min(end, products.length)} из {products.length}
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                className="border rounded px-2 py-1 text-sm"
+                value={pageSize}
+                onChange={(e) => { setPageSize(parseInt(e.target.value) || 50); setPage(1); }}
+              >
+                {[25, 50, 100, 200].map(s => (
+                  <option key={s} value={s}>{s} / стр</option>
+                ))}
+              </select>
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                className="px-3 py-1 text-sm border rounded disabled:opacity-50"
+              >
+                Назад
+              </button>
+              <span className="text-sm text-gray-700">{page}/{totalPages}</span>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                className="px-3 py-1 text-sm border rounded disabled:opacity-50"
+              >
+                Вперед
+              </button>
+            </div>
           </div>
         </div>
       ) : (

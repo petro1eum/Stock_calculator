@@ -496,18 +496,21 @@ const InventoryOptionCalculator = () => {
 
         const totals = new Map<string, number>();
         const subjBySku = new Map<string, string>();
+        const nameBySku = new Map<string, string>();
         (stocks || []).forEach((r: any) => {
           const sku = String(r.sku);
           const qty = Number(r.quantity || 0);
           totals.set(sku, (totals.get(sku) || 0) + qty);
           const subj = typeof r.raw?.subject === 'string' ? r.raw.subject : undefined;
+          const name = typeof r.raw?.name === 'string' ? r.raw.name : undefined;
           if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
+          if (name && !nameBySku.has(sku)) nameBySku.set(sku, name);
         });
 
         const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
         let initialProducts: Product[] = Array.from(totals.keys()).map((sku, idx) => ({
           id: idx + 1,
-          name: subjBySku.get(sku) || 'Товар WB',
+          name: nameBySku.get(sku) || subjBySku.get(sku) || 'Товар WB',
           sku,
           purchase: 0,
           margin: 0,
