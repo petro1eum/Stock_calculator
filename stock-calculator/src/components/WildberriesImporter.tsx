@@ -1,7 +1,10 @@
 import React from 'react';
+import { Product, SalesRecord } from '../types';
+import { supabase } from '../utils/supabaseClient';
+import { updateProductsFromSales } from '../utils/inventoryCalculations';
 
 interface WildberriesImporterProps {
-  onUpdateProducts?: (products: any[]) => void;
+  onUpdateProducts?: React.Dispatch<React.SetStateAction<Product[]>>;
 }
 
 const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProducts }) => {
@@ -27,11 +30,35 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
         throw new Error(data.error || 'Ошибка получения данных');
       }
       
-      setResult({
+      const res = {
         type: 'sales',
         count: data.sales?.length || 0,
         data: data.sales
-      });
+      };
+      setResult(res);
+      // Автоприменение к товарам: пересчет спроса из исторических продаж
+      if (onUpdateProducts && res.data && res.data.length > 0) {
+        const salesRecords: SalesRecord[] = res.data.map((s: any) => ({
+          date: s.date,
+          sku: String(s.nmId),
+          units: Number(s.quantity || 1),
+          revenue: Number(s.totalPrice || 0)
+        }));
+        onUpdateProducts(prev => updateProductsFromSales(prev, salesRecords, { weeksWindow: 26 }));
+      }
+
+      // Сохранить в Supabase (per-user)
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (token) {
+          await fetch('/api/db-save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ type: 'sales', records: res.data })
+          });
+        }
+      } catch {}
       
       // Здесь можно обновить продукты на основе продаж
       // if (onUpdateProducts && data.sales) {
@@ -58,11 +85,24 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
         throw new Error(data.error || 'Ошибка получения данных');
       }
       
-      setResult({
+      const res = {
         type: 'purchases',
         count: data.purchases?.length || 0,
         data: data.purchases
-      });
+      };
+      setResult(res);
+      // Сохранить в Supabase
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (token) {
+          await fetch('/api/db-save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ type: 'purchases', records: res.data })
+          });
+        }
+      } catch {}
       
     } catch (err: any) {
       setError(err.message);
@@ -84,11 +124,24 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
         throw new Error(data.error || 'Ошибка получения данных');
       }
       
-      setResult({
+      const res = {
         type: 'stocks',
         count: data.stocks?.length || 0,
         data: data.stocks
-      });
+      };
+      setResult(res);
+      // Сохранить в Supabase
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (token) {
+          await fetch('/api/db-save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ type: 'stocks', records: res.data })
+          });
+        }
+      } catch {}
       
     } catch (err: any) {
       setError(err.message);
@@ -216,6 +269,11 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
               💾 Скачать
             </button>
           </div>
+          {result.type === 'sales' && (
+            <div className="mt-2 text-xs text-gray-600">
+              История продаж автоматически применена к товарам (SKU = nmId). Если товары не обновились, убедитесь, что SKU совпадает с nmId.
+            </div>
+          )}
           
           {/* Превью данных */}
           {result.data && result.data.length > 0 && (
@@ -229,7 +287,8 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       {/* Справка */}
       <div className="text-xs text-gray-500 p-2 bg-gray-50 rounded">
         <strong>Справка:</strong> Данные загружаются из API Wildberries с ключом из .env файла. 
-        Продажи и поставки зависят от выбранного периода, остатки и заказы показывают текущее состояние.
+        Продажи и поставки зависят от выбранного периода, остатки и заказы показывают текущее состояние. 
+        Для пересчета параметров спроса SKU должен совпадать с nmId из Wildberries.
       </div>
     </div>
   );

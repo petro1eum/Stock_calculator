@@ -4,6 +4,7 @@ import { parseSalesCSV, parseSalesXLSX, updateProductsFromSales } from '../utils
 import WildberriesImporter from './WildberriesImporter';
 import toast from 'react-hot-toast';
 import { usePortfolioSettings } from '../contexts/PortfolioSettingsContext';
+import { supabase } from '../utils/supabaseClient';
 
 interface ExportImportTabProps {
   products: Product[];
@@ -11,6 +12,7 @@ interface ExportImportTabProps {
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   exportToCSV: () => void;
   importFromCSV: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  selectedWarehouse?: 'wildberries';
 }
 
 const ExportImportTab: React.FC<ExportImportTabProps> = ({
@@ -18,9 +20,67 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
   productsWithMetrics,
   setProducts,
   exportToCSV,
-  importFromCSV
+  importFromCSV,
+  selectedWarehouse
 }) => {
   const portfolioSettings = usePortfolioSettings();
+
+  const loadFromDB = async (table: 'wb_sales' | 'wb_stocks' | 'wb_purchases' | 'wb_orders') => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('Не авторизован');
+        return [] as any[];
+      }
+      const res = await fetch(`/api/db-load?table=${table}&limit=5000`, { headers: { Authorization: `Bearer ${token}` } });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error || 'Ошибка загрузки из БД');
+        return [] as any[];
+      }
+      return (json.rows || []) as any[];
+    } catch (e) {
+      toast.error('Ошибка сети при загрузке из БД');
+      return [] as any[];
+    }
+  };
+
+  const applySalesFromDB = async () => {
+    const rows = await loadFromDB('wb_sales');
+    if (rows.length === 0) {
+      toast('В БД нет записей продаж');
+      return;
+    }
+    const sales: SalesRecord[] = rows.map((r: any) => ({
+      date: r.date,
+      sku: String(r.sku),
+      units: Number(r.units || 1),
+      revenue: typeof r.revenue === 'number' ? r.revenue : undefined
+    }));
+    setProducts(prev => updateProductsFromSales(prev, sales, { weeksWindow: 26 }));
+    toast.success(`Применены продажи из БД: ${sales.length}`);
+  };
+
+  const applyStocksFromDB = async () => {
+    const rows = await loadFromDB('wb_stocks');
+    if (rows.length === 0) {
+      toast('В БД нет записей остатков');
+      return;
+    }
+    // Суммируем количество по SKU (текущая оценка остатков)
+    const totals = new Map<string, number>();
+    rows.forEach((r: any) => {
+      const sku = String(r.sku);
+      const qty = Number(r.quantity || 0);
+      totals.set(sku, (totals.get(sku) || 0) + qty);
+    });
+    setProducts(prev => prev.map(p => ({
+      ...p,
+      currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0)
+    })));
+    toast.success(`Обновлены остатки по SKU: ${totals.size}`);
+  };
 
   const exportToJSON = () => {
     if (products.length === 0) {
@@ -303,6 +363,20 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
             >
               Скачать шаблон CSV
             </button>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                onClick={applySalesFromDB}
+                className="w-full px-4 py-2 text-sm bg-indigo-100 text-indigo-800 rounded hover:bg-indigo-200"
+              >
+                ⬇️ Загрузить продажи из БД
+              </button>
+              <button
+                onClick={applyStocksFromDB}
+                className="w-full px-4 py-2 text-sm bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200"
+              >
+                ⬇️ Загрузить остатки из БД
+              </button>
+            </div>
           </div>
           
           <div className="border border-gray-200 rounded-lg p-4">
@@ -329,6 +403,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         {/* Wildberries API Integration */}
         <div className="mt-6 p-4 bg-purple-50 border border-purple-200 rounded">
           <h4 className="font-semibold mb-3 text-purple-800">📡 Импорт из Wildberries API</h4>
+          <div className="text-xs text-purple-700 mb-2">Выбранный склад: {selectedWarehouse === 'wildberries' ? 'Wildberries' : '—'}</div>
           <WildberriesImporter onUpdateProducts={setProducts} />
         </div>
 

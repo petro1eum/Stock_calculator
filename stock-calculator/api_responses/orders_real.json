@@ -1,6 +1,0 @@
-{
-  "error": true,
-  "status": 401,
-  "statusText": "Unauthorized",
-  "response": "{\n    \"title\": \"unauthorized\",\n    \"detail\": \"token scope not allowed\",\n    \"code\": \"461a0b83d6bd a53a3d31f8b003bce 8d7a4aaab17a\",\n    \"requestId\": \"f023788c0eb1ee544da56bce2fcbb212\",\n    \"origin\": \"s2s-api-auth-marketplace\",\n    \"status\": 401,\n    \"statusText\": \"Unauthorized\",\n    \"timestamp\": \"2025-08-12T13:27:21Z\"\n}\r\n"
-}

@@ -18,6 +18,8 @@ interface SettingsTabProps {
   setRushSave: (value: number) => void;
   csl: number;
   setCsl: (value: number) => void;
+  selectedWarehouse?: 'wildberries';
+  setSelectedWarehouse?: (w: 'wildberries') => void;
   monteCarloParams?: MonteCarloParams;
   setMonteCarloParams?: React.Dispatch<React.SetStateAction<MonteCarloParams>>;
 }
@@ -30,6 +32,8 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
   rushProb, setRushProb,
   rushSave, setRushSave,
   csl, setCsl,
+  selectedWarehouse,
+  setSelectedWarehouse,
   monteCarloParams,
   setMonteCarloParams
 }) => {
@@ -42,6 +46,18 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
         настраиваются отдельно для каждого SKU в разделе "Товары".
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Селектор склада (пока только Wildberries) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Склад (источник данных)</label>
+          <select
+            value={selectedWarehouse || 'wildberries'}
+            onChange={() => setSelectedWarehouse && setSelectedWarehouse('wildberries')}
+            className="w-full p-2 border border-gray-300 rounded"
+          >
+            <option value="wildberries">Wildberries</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">На текущем этапе доступен только склад Wildberries.</p>
+        </div>
         <SliderWithValue 
           label="Максимум для графиков (технический параметр)" 
           value={maxUnits} 

@@ -45,6 +45,8 @@ const InventoryOptionCalculator = () => {
   const [r, setR] = useState(0.06);               // ставка капитала
   const [weeks, setWeeks] = useState(13);         // lead-time
   const [csl, setCsl] = useState(0.95);           // целевой CSL
+  // Выбор склада (на старте только Wildberries)
+  const [selectedWarehouse, setSelectedWarehouse] = useState<'wildberries'>('wildberries');
 
   /* ----- состояние для одного товара (для графика) ----- */
   const [purchase] = useState(8.5);  // $/шт закуп
@@ -688,6 +690,8 @@ const InventoryOptionCalculator = () => {
             setRushSave={setRushSave}
             csl={csl}
             setCsl={setCsl}
+            selectedWarehouse={selectedWarehouse}
+            setSelectedWarehouse={setSelectedWarehouse}
             monteCarloParams={monteCarloParams}
             setMonteCarloParams={setMonteCarloParams}
           />
@@ -740,6 +744,7 @@ const InventoryOptionCalculator = () => {
             setProducts={setProducts}
             exportToCSV={exportToCSV}
             importFromCSV={importFromCSV}
+            selectedWarehouse={selectedWarehouse}
           />
         )}
         
