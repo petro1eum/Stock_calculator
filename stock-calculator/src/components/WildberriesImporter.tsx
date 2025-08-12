@@ -116,6 +116,38 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     }
   };
 
+  const postWithRetry = async (url: string, key: string, body: unknown, maxRetries = 6) => {
+    let attempt = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: key, Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (resp.status === 429) {
+        if (attempt >= maxRetries) {
+          const txt = await resp.text();
+          throw new Error(`WB API 429 (лимит запросов). Попробуйте позже. Подробности: ${txt.slice(0, 200)}`);
+        }
+        const delay = Math.min(32000, 1000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 400);
+        attempt += 1;
+        await sleep(delay);
+        continue;
+      }
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`WB API: ${resp.status} ${resp.statusText} ${txt.slice(0, 200)}`);
+      }
+      const ct = resp.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        const txt = await resp.text();
+        throw new Error(`WB API вернул не-JSON ответ: ${txt.slice(0, 200)}`);
+      }
+      return resp.json();
+    }
+  };
+
   const fetchExistingByIds = async (table: 'wb_sales' | 'wb_purchases', idColumn: 'sale_id' | 'income_id', ids: string[], userId: string): Promise<Set<string>> => {
     const existing = new Set<string>();
     const chunkSize = 800; // safe for URL length
@@ -132,7 +164,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     return existing;
   };
 
-  const safeSaveToDb = async (type: 'sales' | 'purchases' | 'stocks', records: any[]) => {
+  const safeSaveToDb = async (type: 'sales' | 'purchases' | 'stocks' | 'prices' | 'analytics', records: any[]) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -216,6 +248,51 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
         await supabase
           .from('wb_stocks')
           .upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any, ignoreDuplicates: true as any });
+        return;
+      }
+
+      if (type === 'prices') {
+        const rows: any[] = [];
+        for (const g of records as any[]) {
+          const nmId = String(g.nmID ?? g.nmId ?? g.nmid);
+          const currency = g.currencyIsoCode4217 || null;
+          const discount = typeof g.discount === 'number' ? g.discount : (typeof g.clubDiscount === 'number' ? g.clubDiscount : null);
+          (g.sizes || []).forEach((s: any) => {
+            rows.push({
+              user_id: user.id,
+              nm_id: nmId,
+              size_id: String(s.sizeID ?? s.sizeId ?? s.id),
+              currency,
+              price: typeof s.price === 'number' ? s.price : null,
+              discounted_price: typeof s.discountedPrice === 'number' ? s.discountedPrice : null,
+              discount,
+              raw: { ...g, size: s }
+            });
+          });
+        }
+        if (rows.length > 0) {
+          await supabase
+            .from('wb_prices')
+            .upsert(rows as any, { onConflict: 'user_id,nm_id,size_id' as any, ignoreDuplicates: true as any });
+        }
+        return;
+      }
+
+      if (type === 'analytics') {
+        const rows = (records as any[]).map((row: any) => ({
+          user_id: user.id,
+          nm_id: String(row.nmID ?? row.nmId ?? row.nmid),
+          period_begin: row.period_begin || row.statistics?.selectedPeriod?.begin ? new Date(row.period_begin || row.statistics.selectedPeriod.begin).toISOString() : new Date().toISOString(),
+          period_end: row.period_end || row.statistics?.selectedPeriod?.end ? new Date(row.period_end || row.statistics.selectedPeriod.end).toISOString() : new Date().toISOString(),
+          metrics: row.statistics || row.metrics || null,
+          stocks_wb: typeof row.stocks?.stocksWb === 'number' ? row.stocks.stocksWb : (typeof row.stocks_wb === 'number' ? row.stocks_wb : null),
+          raw: row
+        }));
+        if (rows.length > 0) {
+          await supabase
+            .from('wb_analytics')
+            .upsert(rows as any, { onConflict: 'user_id,nm_id,period_begin,period_end' as any, ignoreDuplicates: true as any });
+        }
         return;
       }
     } catch {}
@@ -385,6 +462,54 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     }
   };
 
+  const importPrices = async () => {
+    setLoading(true); setError(null); setResult(null);
+    try {
+      const key = await getWbKey();
+      if (!key) throw new Error('Сначала сохраните ключ WB в настройках пользователя');
+      const url = `https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter?limit=1000`;
+      const data = await fetchWithRetry(url, key, true);
+      const list = data?.data?.listGoods || data?.listGoods || [];
+      await safeSaveToDb('prices', list);
+      // обновим отображаемые имена
+      if (onUpdateProducts) {
+        onUpdateProducts(prev => prev.map(p => {
+          const g = (list as any[]).find((x: any) => String(x.nmID ?? x.nmId) === p.sku);
+          return g?.vendorCode ? { ...p, name: g.vendorCode } : p;
+        }));
+      }
+      setResult({ type: 'prices', count: list.length, data: list });
+    } catch (e: any) { setError(e.message); } finally { setLoading(false); }
+  };
+
+  const importAnalytics = async () => {
+    setLoading(true); setError(null); setResult(null);
+    try {
+      const key = await getWbKey();
+      if (!key) throw new Error('Сначала сохраните ключ WB в настройках пользователя');
+      // Соберем период
+      const begin = `${dateFrom} 00:00:00`;
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const end = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const url = `https://seller-analytics-api.wildberries.ru/api/v2/nm-report/detail`;
+      const body = { period: { begin, end }, page: 1 };
+      const data = await postWithRetry(url, key, body);
+      const list = data?.data || data || [];
+      await safeSaveToDb('analytics', list);
+      // обновим имя/категорию
+      if (onUpdateProducts) {
+        onUpdateProducts(prev => prev.map(p => {
+          const g = (list as any[]).find((x: any) => String(x.nmID ?? x.nmId) === p.sku);
+          const name = g?.vendorCode || p.name;
+          const category = g?.object?.name || p.category;
+          return { ...p, name, category };
+        }));
+      }
+      setResult({ type: 'analytics', count: Array.isArray(list) ? list.length : 0, data: list });
+    } catch (e: any) { setError(e.message); } finally { setLoading(false); }
+  };
+
   const downloadData = () => {
     if (!result?.data) return;
     const filename = `wb-${result.type}-${dateFrom}.json`;
@@ -413,12 +538,16 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       </div>
 
       {/* Кнопки импорта */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-        <button onClick={importSales} disabled={loading} className="px-3 py-2 text-sm bg-green-700 text-white disabled:opacity-50">Продажи</button>
-        <button onClick={importPurchases} disabled={loading} className="px-3 py-2 text-sm bg-blue-700 text-white disabled:opacity-50">Поставки</button>
-        <button onClick={importStocks} disabled={loading} className="px-3 py-2 text-sm bg-yellow-700 text-white disabled:opacity-50">Остатки</button>
-        <button onClick={downloadData} disabled={!result?.data} className="px-3 py-2 text-sm bg-gray-700 text-white disabled:opacity-50">Скачать JSON</button>
-        <button onClick={() => setResult(null)} className="px-3 py-2 text-sm border">Очистить</button>
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+        <button onClick={importSales} disabled={loading} className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50">Продажи</button>
+        <button onClick={importPurchases} disabled={loading} className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50">Поставки</button>
+        <button onClick={importStocks} disabled={loading} className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50">Остатки</button>
+        <button onClick={importPrices} disabled={loading} className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50">Цены</button>
+        <button onClick={importAnalytics} disabled={loading} className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50">Аналитика</button>
+        <div className="flex gap-2">
+          <button onClick={downloadData} disabled={!result?.data} className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-50">Скачать JSON</button>
+          <button onClick={() => setResult(null)} className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50">Очистить</button>
+        </div>
       </div>
 
       {loading && <div className="text-sm text-blue-600">Загружаем данные из Wildberries API...</div>}
