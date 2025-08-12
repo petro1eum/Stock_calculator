@@ -1,5 +1,6 @@
 import React from 'react';
 import SliderWithValue from './SliderWithValue';
+import WbKeyManager from './WbKeyManager';
 import { MonteCarloParams } from '../types';
 
 interface SettingsTabProps {
@@ -120,6 +121,11 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
       
       <div className="mt-6 space-y-4">
+        {/* Wildberries API key management */}
+        <div className="p-4 bg-white border rounded">
+          <h4 className="font-semibold mb-2">Интеграция с Wildberries</h4>
+          <WbKeyManager />
+        </div>
         {monteCarloParams && setMonteCarloParams && (
           <div className="p-4 bg-indigo-50 border-l-4 border-indigo-500 rounded">
             <h4 className="font-semibold text-indigo-800 mb-2">Метод расчета ожидаемых величин</h4>
