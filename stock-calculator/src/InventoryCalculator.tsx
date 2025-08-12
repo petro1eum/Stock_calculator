@@ -641,6 +641,27 @@ const InventoryOptionCalculator = () => {
               return s ? { ...p, sales30d: s.units, revenue30d: s.revenue } : p;
             });
           } catch {}
+          // 12 месяцев
+          try {
+            const since12 = new Date(); since12.setFullYear(since12.getFullYear() - 1);
+            const { data: sales12 } = await supabase
+              .from('wb_sales')
+              .select('sku, units, revenue, date')
+              .eq('user_id', user.id)
+              .gte('date', since12.toISOString());
+            const agg12 = new Map<string, { units: number; revenue: number }>();
+            (sales12 || []).forEach((r: any) => {
+              const sku = String(r.sku);
+              const cur = agg12.get(sku) || { units: 0, revenue: 0 };
+              cur.units += Number(r.units || 0);
+              cur.revenue += Number(r.revenue || 0);
+              agg12.set(sku, cur);
+            });
+            initialProducts = initialProducts.map(p => {
+              const s = agg12.get(p.sku);
+              return s ? { ...p, sales12m: s.units, revenue12m: s.revenue } : p;
+            });
+          } catch {}
           setProducts(initialProducts);
         }
       } catch {}

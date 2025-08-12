@@ -48,6 +48,8 @@ export interface Product {
   // Краткий анализ продаж
   sales30d?: number; // шт за 30 дней
   revenue30d?: number; // выручка за 30 дней (по розничной цене)
+  sales12m?: number; // шт за 12 месяцев
+  revenue12m?: number; // выручка за 12 месяцев
   // История продаж/закупок/логистики (опционально)
   salesHistory?: SalesRecord[];
   purchaseHistory?: PurchaseRecord[];

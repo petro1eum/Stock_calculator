@@ -178,6 +178,27 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           </div>
         </div>
         
+        {/* Розничная цена и продажи */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+          <div className="bg-gray-100 p-3 rounded">
+            <div className="text-sm text-gray-500">Розничная цена (WB)</div>
+            <div className="text-lg font-bold">{product.retailPrice ? `$${fmt(product.retailPrice)}` : '—'}</div>
+            {typeof product.discountPercent === 'number' && (
+              <div className="text-xs text-gray-500">Скидка: {product.discountPercent}%</div>
+            )}
+          </div>
+          <div className="bg-gray-100 p-3 rounded">
+            <div className="text-sm text-gray-500">Продажи 30 дней</div>
+            <div className="text-lg font-bold">{fmt(product.sales30d || 0)} шт</div>
+            <div className="text-xs text-gray-500">Выручка: ${fmt(product.revenue30d || 0)}</div>
+          </div>
+          <div className="bg-gray-100 p-3 rounded">
+            <div className="text-sm text-gray-500">Продажи 12 мес</div>
+            <div className="text-lg font-bold">{fmt(product.sales12m || 0)} шт</div>
+            <div className="text-xs text-gray-500">Выручка: ${fmt(product.revenue12m || 0)}</div>
+          </div>
+        </div>
+
         {/* Текущий запас и сезонность */}
         <div className="grid grid-cols-2 md:grid-cols-2 gap-4 mt-4">
           <div className="bg-blue-50 p-3 rounded border-l-4 border-blue-500">
