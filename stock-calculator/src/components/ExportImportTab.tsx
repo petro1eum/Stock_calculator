@@ -61,7 +61,33 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       units: Number(r.units || 1),
       revenue: typeof r.revenue === 'number' ? r.revenue : undefined
     }));
-    setProducts(prev => updateProductsFromSales(prev, sales, { weeksWindow: 26 }));
+    setProducts(prev => {
+      // автосоздание товаров по новым SKU
+      const existing = new Set(prev.map(p => p.sku));
+      const skus = Array.from(new Set(rows.map((r: any) => String(r.sku))));
+      const missing = skus.filter(sku => !existing.has(sku));
+      const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
+      const newItems: Product[] = missing.map((sku, idx) => ({
+        id: prev.length + idx + 1,
+        name: String(typeof rows.find((r: any) => String(r.sku) === String(sku))?.raw?.subject === 'string' ? rows.find((r: any) => String(r.sku) === String(sku))!.raw.subject : 'Товар WB'),
+        sku: String(sku),
+        purchase: 0,
+        margin: 0,
+        muWeek: 0,
+        sigmaWeek: 0,
+        revenue: 0,
+        optQ: 0,
+        optValue: 0,
+        safety: 0,
+        currentStock: 0,
+        seasonality: baseSeasonality,
+        currency: 'RUB',
+        supplier: 'domestic',
+        category: ''
+      }));
+      const combined = [...prev, ...newItems];
+      return updateProductsFromSales(combined, sales, { weeksWindow: 26 });
+    });
     toast.success(`Применены продажи из БД: ${sales.length}`);
   };
 
@@ -77,10 +103,34 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       const qty = Number(r.quantity || 0);
       totals.set(sku, (totals.get(sku) || 0) + qty);
     });
-    setProducts(prev => prev.map(p => ({
-      ...p,
-      currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0)
-    })));
+    setProducts(prev => {
+      const existing = new Set(prev.map(p => p.sku));
+      const skus = Array.from(totals.keys());
+      const missing = skus.filter(sku => !existing.has(sku));
+      const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
+      const newItems: Product[] = missing.map((sku, idx) => ({
+        id: prev.length + idx + 1,
+        name: String(typeof rows.find((r: any) => String(r.sku) === String(sku))?.raw?.subject === 'string' ? rows.find((r: any) => String(r.sku) === String(sku))!.raw.subject : 'Товар WB'),
+        sku: String(sku),
+        purchase: 0,
+        margin: 0,
+        muWeek: 0,
+        sigmaWeek: 0,
+        revenue: 0,
+        optQ: 0,
+        optValue: 0,
+        safety: 0,
+        currentStock: totals.get(sku) || 0,
+        seasonality: baseSeasonality,
+        currency: 'RUB',
+        supplier: 'domestic',
+        category: ''
+      }));
+      return [...prev, ...newItems].map(p => ({
+        ...p,
+        currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0)
+      }));
+    });
     toast.success(`Обновлены остатки по SKU: ${totals.size}`);
   };
 
@@ -106,9 +156,34 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       }));
       const { error } = await supabase.from('wb_sales').upsert(mapped as any, { onConflict: 'user_id,sale_id' as any });
       if (error) throw error;
-      // Пересчет спроса
+      // Автосоздание товаров и пересчет спроса
       const salesRecords: SalesRecord[] = mapped.map((m: any) => ({ date: m.date, sku: m.sku, units: m.units, revenue: m.revenue ?? undefined }));
-      setProducts(prev => updateProductsFromSales(prev, salesRecords, { weeksWindow: 26 }));
+      setProducts(prev => {
+        const existing = new Set(prev.map(p => p.sku));
+        const skus: string[] = Array.from(new Set<string>(mapped.map((m: any) => String(m.sku))));
+        const missing: string[] = skus.filter((sku: string) => !existing.has(String(sku)));
+        const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
+        const newItems: Product[] = missing.map((sku, idx) => ({
+          id: prev.length + idx + 1,
+          name: String(typeof (data.find((s: any) => String(s.nmId) === sku)?.subject) === 'string' ? data.find((s: any) => String(s.nmId) === sku)!.subject : 'Товар WB'),
+          sku: String(sku),
+          purchase: 0,
+          margin: 0,
+          muWeek: 0,
+          sigmaWeek: 0,
+          revenue: 0,
+          optQ: 0,
+          optValue: 0,
+          safety: 0,
+          currentStock: 0,
+          seasonality: baseSeasonality,
+          currency: 'RUB',
+          supplier: 'domestic',
+          category: ''
+        }));
+        const combined = [...prev, ...newItems];
+        return updateProductsFromSales(combined, salesRecords, { weeksWindow: 26 });
+      });
       toast.success(`Импортировано продаж: ${mapped.length}`);
     } catch (err: any) {
       toast.error(`Ошибка импорта продаж: ${err.message || err}`);
@@ -173,10 +248,34 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       });
       const { error } = await supabase.from('wb_stocks').upsert(mapped as any, { onConflict: 'user_id,sku,barcode,date' as any });
       if (error) throw error;
-      // Обновляем currentStock
+      // Автосоздание и обновление currentStock
       const totals = new Map<string, number>();
       mapped.forEach((m: any) => totals.set(m.sku, (totals.get(m.sku) || 0) + (m.quantity || 0)));
-      setProducts(prev => prev.map(p => ({ ...p, currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0) })));
+      setProducts(prev => {
+        const existing = new Set(prev.map(p => p.sku));
+        const skus = Array.from(totals.keys());
+        const missing = skus.filter(sku => !existing.has(sku));
+        const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
+        const newItems: Product[] = missing.map((sku, idx) => ({
+          id: prev.length + idx + 1,
+          name: String(typeof (data.find((s: any) => String(s.nmId) === sku)?.subject) === 'string' ? data.find((s: any) => String(s.nmId) === sku)!.subject : 'Товар WB'),
+          sku: String(sku),
+          purchase: 0,
+          margin: 0,
+          muWeek: 0,
+          sigmaWeek: 0,
+          revenue: 0,
+          optQ: 0,
+          optValue: 0,
+          safety: 0,
+          currentStock: totals.get(sku) || 0,
+          seasonality: baseSeasonality,
+          currency: 'RUB',
+          supplier: 'domestic',
+          category: ''
+        }));
+        return [...prev, ...newItems].map(p => ({ ...p, currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0) }));
+      });
       toast.success(`Импортировано остатков: ${mapped.length}`);
     } catch (err: any) {
       toast.error(`Ошибка импорта остатков: ${err.message || err}`);
@@ -333,112 +432,324 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Экспорт данных */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold mb-4">Экспорт данных</h3>
-        <p className="text-gray-600 mb-4">Экспортируйте ваши данные для резервного копирования или анализа в других программах.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="border border-gray-200 rounded-lg p-4">
-            <h4 className="font-medium mb-2">CSV формат</h4>
-            <p className="text-sm text-gray-600 mb-4">Универсальный формат для Excel, Google Sheets и других таблиц</p>
-            <button onClick={exportToCSV} disabled={products.length === 0} className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed">📄 Экспортировать в CSV</button>
-          </div>
-          <div className="border border-gray-200 rounded-lg p-4">
-            <h4 className="font-medium mb-2">JSON формат</h4>
-            <p className="text-sm text-gray-600 mb-4">Полный экспорт с сохранением всех настроек и параметров</p>
-            <button onClick={exportToJSON} disabled={products.length === 0} className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed">📊 Экспортировать в JSON</button>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Заголовок */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Управление данными</h1>
+              <p className="text-gray-600 mt-1">Импорт, экспорт и синхронизация данных товарного портфеля</p>
+            </div>
+            <div className="flex items-center space-x-4 text-sm text-gray-500">
+              <div className="flex items-center">
+                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                Склад: {selectedWarehouse === 'wildberries' ? 'Wildberries' : 'Не выбран'}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Импорт данных */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold mb-4">Импорт данных</h3>
-        <p className="text-gray-600 mb-4">Загрузите данные из файла. Поддерживаются форматы CSV и JSON.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="border border-gray-200 rounded-lg p-4">
-            <h4 className="font-medium mb-2">Импорт из CSV</h4>
-            <p className="text-sm text-gray-600 mb-4">Базовый импорт товаров из таблицы. Также поддерживаются CSV с историей:<br/>• Продажи: <code>date,sku,units,revenue</code><br/>• Закупки: <code>date,sku,quantity,unitCost,currency,exchangeRateToRUB</code><br/>• Логистика: <code>date,sku,cost,currency,exchangeRateToRUB</code></p>
-            <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" id="csv-import" />
-            <label htmlFor="csv-import" className="block w-full text-center px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 cursor-pointer">📥 Выбрать CSV файл</label>
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div>
-                <input type="file" accept=".csv" onChange={importSalesCSV} className="hidden" id="sales-import" />
-                <label htmlFor="sales-import" className="block w-full text-center px-4 py-2 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 cursor-pointer">📈 Импортировать продажи (CSV)</label>
-                <p className="text-xs text-gray-500 mt-1">Пересчитывает спрос (μ/σ) за 26 недель</p>
+        {/* Статистика */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-2xl font-bold text-gray-900">{products.length}</p>
+                <p className="text-sm text-gray-600">Товаров</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.seasonality?.enabled).length}</p>
+                <p className="text-sm text-gray-600">Сезонных</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.currentStock && p.currentStock > 0).length}</p>
+                <p className="text-sm text-gray-600">В наличии</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.currency && p.currency !== 'RUB').length}</p>
+                <p className="text-sm text-gray-600">В валюте</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.volumeDiscounts && p.volumeDiscounts.length > 0).length}</p>
+                <p className="text-sm text-gray-600">Со скидками</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-indigo-100 rounded-lg">
+                <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.supplier && p.supplier !== 'domestic').length}</p>
+                <p className="text-sm text-gray-600">Импорт</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Экспорт */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center mb-6">
+              <div className="p-2 bg-green-100 rounded-lg mr-3">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
               </div>
               <div>
-                <input type="file" accept=".xlsx,.xls" onChange={importSalesXLSX} className="hidden" id="sales-import-xlsx" />
-                <label htmlFor="sales-import-xlsx" className="block w-full text-center px-4 py-2 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 cursor-pointer">📊 Импортировать продажи (Excel)</label>
+                <h2 className="text-xl font-semibold text-gray-900">Экспорт</h2>
+                <p className="text-sm text-gray-600">Сохранение данных</p>
               </div>
             </div>
-            <button onClick={generateSampleCSV} className="mt-2 w-full px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Скачать шаблон CSV</button>
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button onClick={applySalesFromDB} className="w-full px-4 py-2 text-sm bg-indigo-100 text-indigo-800 rounded hover:bg-indigo-200">⬇️ Загрузить продажи из БД</button>
-              <button onClick={applyStocksFromDB} className="w-full px-4 py-2 text-sm bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200">⬇️ Загрузить остатки из БД</button>
+            <div className="space-y-3">
+              <button 
+                onClick={exportToCSV} 
+                disabled={products.length === 0}
+                className="w-full flex items-center justify-center px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                CSV (Excel)
+              </button>
+              <button 
+                onClick={exportToJSON} 
+                disabled={products.length === 0}
+                className="w-full flex items-center justify-center px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2v0a2 2 0 01-2-2v-1" />
+                </svg>
+                JSON (полный)
+              </button>
             </div>
           </div>
-          <div className="border border-gray-200 rounded-lg p-4">
-            <h4 className="font-medium mb-2">Импорт из JSON</h4>
-            <p className="text-sm text-gray-600 mb-4">Полный импорт с восстановлением всех настроек</p>
-            <input type="file" accept=".json" onChange={importFromJSON} className="hidden" id="json-import" />
-            <label htmlFor="json-import" className="block w-full text-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 cursor-pointer">📥 Выбрать JSON файл</label>
+
+          {/* Импорт файлов */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center mb-6">
+              <div className="p-2 bg-blue-100 rounded-lg mr-3">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Импорт файлов</h2>
+                <p className="text-sm text-gray-600">Загрузка из файлов</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" id="csv-import" />
+                <label htmlFor="csv-import" className="w-full flex items-center justify-center px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 cursor-pointer transition-colors">
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  CSV товары
+                </label>
+              </div>
+              <div>
+                <input type="file" accept=".json" onChange={importFromJSON} className="hidden" id="json-import" />
+                <label htmlFor="json-import" className="w-full flex items-center justify-center px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2v0a2 2 0 01-2-2v-1" />
+                  </svg>
+                  JSON полный
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <input type="file" accept=".csv" onChange={importSalesCSV} className="hidden" id="sales-import" />
+                  <label htmlFor="sales-import" className="w-full flex items-center justify-center px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer transition-colors">
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                    Продажи CSV
+                  </label>
+                </div>
+                <div>
+                  <input type="file" accept=".xlsx,.xls" onChange={importSalesXLSX} className="hidden" id="sales-import-xlsx" />
+                  <label htmlFor="sales-import-xlsx" className="w-full flex items-center justify-center px-3 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 cursor-pointer transition-colors">
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    Excel
+                  </label>
+                </div>
+              </div>
+              <button onClick={generateSampleCSV} className="w-full px-4 py-2 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
+                Скачать шаблон
+              </button>
+            </div>
+          </div>
+
+          {/* База данных */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center mb-6">
+              <div className="p-2 bg-purple-100 rounded-lg mr-3">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">База данных</h2>
+                <p className="text-sm text-gray-600">Синхронизация</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <button 
+                onClick={applySalesFromDB} 
+                className="w-full flex items-center justify-center px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                Загрузить продажи
+              </button>
+              <button 
+                onClick={applyStocksFromDB} 
+                className="w-full flex items-center justify-center px-4 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
+                </svg>
+                Загрузить остатки
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Настройки и импорт из Wildberries */}
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="p-4 bg-purple-50 border border-purple-200 rounded">
-            <h4 className="font-semibold mb-3 text-purple-800">🔑 Ключ Wildberries API</h4>
-            <p className="text-xs text-purple-700 mb-2">Ключ хранится в вашей записи Supabase и используется для импорта.</p>
-            <WbKeyManager />
-            <div className="mt-4 p-3 bg-white rounded border">
-              <h5 className="font-medium mb-2">Импорт из локальных JSON (WB)</h5>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-                <div>
-                  <input type="file" accept=".json" onChange={importWBSalesJSON} className="hidden" id="wb-sales-json" />
-                  <label htmlFor="wb-sales-json" className="block w-full text-center px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 cursor-pointer">📈 Продажи JSON</label>
-                </div>
-                <div>
-                  <input type="file" accept=".json" onChange={importWBPurchasesJSON} className="hidden" id="wb-purchases-json" />
-                  <label htmlFor="wb-purchases-json" className="block w-full text-center px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer">📦 Поставки JSON</label>
-                </div>
-                <div>
-                  <input type="file" accept=".json" onChange={importWBStocksJSON} className="hidden" id="wb-stocks-json" />
-                  <label htmlFor="wb-stocks-json" className="block w-full text-center px-3 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 cursor-pointer">📊 Остатки JSON</label>
+        {/* Wildberries интеграция */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center mb-6">
+            <div className="p-2 bg-purple-100 rounded-lg mr-3">
+              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Wildberries</h2>
+              <p className="text-sm text-gray-600">API интеграция и локальные файлы</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* API ключ и прямой импорт */}
+            <div className="space-y-4">
+              <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <h3 className="font-medium text-purple-900 mb-3">API ключ</h3>
+                <WbKeyManager />
+              </div>
+              <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <h3 className="font-medium text-gray-900 mb-3">Прямой импорт из API</h3>
+                <WildberriesImporter onUpdateProducts={setProducts} />
+              </div>
+            </div>
+
+            {/* Локальные JSON файлы */}
+            <div className="space-y-4">
+              <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <h3 className="font-medium text-gray-900 mb-3">Локальные JSON файлы</h3>
+                <div className="grid grid-cols-1 gap-2">
+                  <div>
+                    <input type="file" accept=".json" onChange={importWBSalesJSON} className="hidden" id="wb-sales-json" />
+                    <label htmlFor="wb-sales-json" className="w-full flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer transition-colors">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                      Продажи JSON
+                    </label>
+                  </div>
+                  <div>
+                    <input type="file" accept=".json" onChange={importWBPurchasesJSON} className="hidden" id="wb-purchases-json" />
+                    <label htmlFor="wb-purchases-json" className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
+                      </svg>
+                      Поставки JSON
+                    </label>
+                  </div>
+                  <div>
+                    <input type="file" accept=".json" onChange={importWBStocksJSON} className="hidden" id="wb-stocks-json" />
+                    <label htmlFor="wb-stocks-json" className="w-full flex items-center justify-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 cursor-pointer transition-colors">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                      </svg>
+                      Остатки JSON
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-          <div className="p-4 bg-purple-50 border border-purple-200 rounded">
-            <h4 className="font-semibold mb-3 text-purple-800">📡 Импорт из Wildberries API</h4>
-            <div className="text-xs text-purple-700 mb-2">Выбранный склад: {selectedWarehouse === 'wildberries' ? 'Wildberries' : '—'}</div>
-            <WildberriesImporter onUpdateProducts={setProducts} />
+        </div>
+
+        {/* Предупреждения */}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5C3.312 17.333 4.273 19 5.814 19z" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-amber-800">Важные замечания</h3>
+              <div className="mt-2 text-sm text-amber-700">
+                <ul className="list-disc space-y-1 ml-5">
+                  <li>Импорт товаров заменяет текущий список</li>
+                  <li>Импорт продаж пересчитывает параметры спроса для существующих товаров</li>
+                  <li>Создавайте резервные копии перед импортом больших объемов</li>
+                  <li>CSV файлы должны соответствовать шаблону с заголовками</li>
+                </ul>
+              </div>
+            </div>
           </div>
-        </div>
-
-        <div className="mt-6 p-4 bg-yellow-50 rounded-lg">
-          <h5 className="font-medium text-yellow-800 mb-2">⚠️ Важно при импорте:</h5>
-          <ul className="text-sm text-yellow-700 space-y-1">
-            <li>• Импорт заменит все текущие данные</li>
-            <li>• Убедитесь, что у вас есть резервная копия важных данных</li>
-            <li>• CSV должен содержать заголовки в первой строке</li>
-            <li>• Пустые поля будут заполнены значениями по умолчанию</li>
-          </ul>
-        </div>
-      </div>
-
-      {/* Статистика текущих данных */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold mb-4">Текущие данные</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center p-4 bg-gray-50 rounded-lg"><div className="text-2xl font-bold text-gray-800">{products.length}</div><div className="text-sm text-gray-600">Товаров</div></div>
-          <div className="text-center p-4 bg-gray-50 rounded-lg"><div className="text-2xl font-bold text-gray-800">{products.filter(p => p.seasonality?.enabled).length}</div><div className="text-sm text-gray-600">С сезонностью</div></div>
-          <div className="text-center p-4 bg-gray-50 rounded-lg"><div className="text-2xl font-bold text-gray-800">{products.filter(p => p.volumeDiscounts && p.volumeDiscounts.length > 0).length}</div><div className="text-sm text-gray-600">Со скидками</div></div>
-          <div className="text-center p-4 bg-gray-50 rounded-lg"><div className="text-2xl font-bold text-gray-800">{products.filter(p => p.currentStock && p.currentStock > 0).length}</div><div className="text-sm text-gray-600">С запасами</div></div>
-          <div className="text-center p-4 bg-gray-50 rounded-lg"><div className="text-2xl font-bold text-gray-800">{products.filter(p => p.currency && p.currency !== 'RUB').length}</div><div className="text-sm text-gray-600">В валюте</div></div>
-          <div className="text-center p-4 bg-gray-50 rounded-lg"><div className="text-2xl font-bold text-gray-800">{products.filter(p => p.supplier && p.supplier !== 'domestic').length}</div><div className="text-sm text-gray-600">Импорт</div></div>
         </div>
       </div>
     </div>
