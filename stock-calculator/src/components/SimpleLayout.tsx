@@ -17,6 +17,7 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
   const navigation = [
     { id: 'dashboard', name: 'Дашборд' },
     { id: 'assortment', name: 'Товары' },
+    { id: 'supplies', name: 'Поставки' },
     { id: 'settings', name: 'Настройки' },
     { id: 'productAnalysis', name: 'Анализ', disabled: productsCount === 0 },
     { id: 'abc', name: 'ABC-анализ', disabled: productsCount === 0 },

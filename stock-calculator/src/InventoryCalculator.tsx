@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import SimpleLayout from "./components/SimpleLayout";
+import SuppliesTab from './components/SuppliesTab';
 import Dashboard from "./components/Dashboard";
 import TheoryTab from "./components/TheoryTab";
 import SettingsTab from "./components/SettingsTab";
@@ -923,6 +924,11 @@ const InventoryOptionCalculator = () => {
             monteCarloParams={monteCarloParams}
             setMonteCarloParams={setMonteCarloParams}
           />
+        )}
+        
+        {activeTab === "supplies" && (
+          // eslint-disable-next-line react/jsx-no-undef
+          <SuppliesTab />
         )}
         
         {activeTab === "assortment" && (
