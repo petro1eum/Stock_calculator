@@ -282,6 +282,85 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     }
   };
 
+  // Импорт локальных Analytics JSON (seller-analytics-api)
+  const importWBAnalyticsJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const mapped = (data || []).map((row: any) => ({
+        user_id: user.id,
+        nm_id: String(row.nmID ?? row.nmId ?? row.nmid),
+        period_begin: new Date(row.statistics?.selectedPeriod?.begin || Date.now()).toISOString(),
+        period_end: new Date(row.statistics?.selectedPeriod?.end || Date.now()).toISOString(),
+        metrics: row.statistics || null,
+        stocks_wb: typeof row.stocks?.stocksWb === 'number' ? row.stocks.stocksWb : null,
+        raw: row
+      }));
+      const { error } = await supabase.from('wb_analytics').upsert(mapped as any, { onConflict: 'user_id,nm_id,period_begin,period_end' as any });
+      if (error) throw error;
+      // Обновим имена/категории по vendorCode/object.name, если есть уже созданные карточки
+      setProducts(prev => prev.map(p => {
+        const match = (data as any[]).find((r: any) => String(r.nmID ?? r.nmId) === p.sku);
+        if (!match) return p;
+        const name = typeof match.vendorCode === 'string' ? match.vendorCode : p.name;
+        const category = typeof match.object?.name === 'string' ? match.object.name : p.category;
+        return { ...p, name, category };
+      }));
+      toast.success(`Импортировано аналитики: ${mapped.length}`);
+    } catch (err: any) {
+      toast.error(`Ошибка импорта аналитики: ${err.message || err}`);
+    }
+  };
+
+  // Импорт локальных Prices JSON (discounts-prices-api)
+  const importWBPricesJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const list = json?.response?.data?.listGoods || json?.listGoods || [];
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const rows: any[] = [];
+      (list as any[]).forEach((g: any) => {
+        const nmId = String(g.nmID ?? g.nmId ?? g.nmid);
+        const currency = g.currencyIsoCode4217 || null;
+        const discount = typeof g.discount === 'number' ? g.discount : (typeof g.clubDiscount === 'number' ? g.clubDiscount : null);
+        const vendorCode = g.vendorCode;
+        (g.sizes || []).forEach((s: any) => {
+          rows.push({
+            user_id: user.id,
+            nm_id: nmId,
+            size_id: String(s.sizeID ?? s.sizeId ?? s.id),
+            currency,
+            price: typeof s.price === 'number' ? s.price : null,
+            discounted_price: typeof s.discountedPrice === 'number' ? s.discountedPrice : null,
+            discount,
+            raw: { ...g, size: s }
+          });
+        });
+        // моментально обновим имя по vendorCode, если карточка уже есть
+        if (typeof vendorCode === 'string') {
+          setProducts(prev => prev.map(p => p.sku === nmId ? { ...p, name: vendorCode } : p));
+        }
+      });
+      if (rows.length > 0) {
+        const { error } = await supabase.from('wb_prices').upsert(rows as any, { onConflict: 'user_id,nm_id,size_id' as any });
+        if (error) throw error;
+      }
+      toast.success(`Импортировано ценовых записей: ${rows.length}`);
+    } catch (err: any) {
+      toast.error(`Ошибка импорта цен: ${err.message || err}`);
+    }
+  };
+
   const exportToJSON = () => {
     if (products.length === 0) {
       toast.error('Нет данных для экспорта');
@@ -531,7 +610,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         {/* Wildberries JSON */}
         <div>
           <h2 className="text-sm font-medium text-gray-700 mb-3">WILDBERRIES JSON</h2>
-          <div className="flex gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <input type="file" accept=".json" onChange={importWBSalesJSON} className="hidden" id="wb-sales-json" />
               <label htmlFor="wb-sales-json" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
@@ -548,6 +627,18 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
               <input type="file" accept=".json" onChange={importWBStocksJSON} className="hidden" id="wb-stocks-json" />
               <label htmlFor="wb-stocks-json" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
                 Остатки
+              </label>
+            </div>
+            <div>
+              <input type="file" accept=".json" onChange={importWBAnalyticsJSON} className="hidden" id="wb-analytics-json" />
+              <label htmlFor="wb-analytics-json" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
+                Аналитика
+              </label>
+            </div>
+            <div>
+              <input type="file" accept=".json" onChange={importWBPricesJSON} className="hidden" id="wb-prices-json" />
+              <label htmlFor="wb-prices-json" className="inline-block px-4 py-2 bg-gray-800 text-white text-sm cursor-pointer">
+                Цены
               </label>
             </div>
           </div>
