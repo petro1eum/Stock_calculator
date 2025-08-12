@@ -42,6 +42,12 @@ export interface Product {
   volume?: number; // объем единицы товара для складских расчетов
   // Разбивка остатков по складам WB: { "Коледино": 12, "Казань": 5 }
   stockByWarehouse?: Record<string, number>;
+  // Цены WB
+  retailPrice?: number; // текущая розничная (discounted)
+  discountPercent?: number; // текущая скидка, %
+  // Краткий анализ продаж
+  sales30d?: number; // шт за 30 дней
+  revenue30d?: number; // выручка за 30 дней (по розничной цене)
   // История продаж/закупок/логистики (опционально)
   salesHistory?: SalesRecord[];
   purchaseHistory?: PurchaseRecord[];

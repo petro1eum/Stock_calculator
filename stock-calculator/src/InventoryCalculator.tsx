@@ -489,7 +489,7 @@ const InventoryOptionCalculator = () => {
         // 1) Остатки -> currentStock, разрез по складам и автосоздание карточек
         const { data: stocks, error: stocksErr } = await supabase
           .from('wb_stocks')
-          .select('sku, quantity, warehouse, raw')
+          .select('sku, quantity, warehouse, date, raw')
           .eq('user_id', user.id)
           .limit(10000);
         if (stocksErr) return;
@@ -497,18 +497,32 @@ const InventoryOptionCalculator = () => {
         const totals = new Map<string, number>();
         const subjBySku = new Map<string, string>();
         const nameBySku = new Map<string, string>();
-        const byWarehouse = new Map<string, Map<string, number>>(); // sku -> (warehouse -> qty)
+        let priceSnapshot: Map<string, { price?: number; discounted?: number; discount?: number; vendor?: string }> | null = null;
+        const byWarehouseLatest = new Map<string, Map<string, { qty: number; date: number }>>(); // sku -> wh -> {qty, ts}
         (stocks || []).forEach((r: any) => {
           const sku = String(r.sku);
           const qty = Number(r.quantity || 0);
-          totals.set(sku, (totals.get(sku) || 0) + qty);
+          const ts = new Date(r.date).getTime() || 0;
           const subj = typeof r.raw?.subject === 'string' ? r.raw.subject : undefined;
-          const name = typeof r.raw?.name === 'string' ? r.raw.name : undefined;
+          const name = typeof r.raw?.vendorCode === 'string' ? r.raw.vendorCode
+                       : (typeof r.raw?.supplierArticle === 'string' ? r.raw.supplierArticle
+                       : (typeof r.raw?.name === 'string' ? r.raw.name : undefined));
           if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
           if (name && !nameBySku.has(sku)) nameBySku.set(sku, name);
           const wh = r.warehouse || r.raw?.warehouseName || 'Склад WB';
-          if (!byWarehouse.has(sku)) byWarehouse.set(sku, new Map());
-          const m = byWarehouse.get(sku)!; m.set(wh, (m.get(wh) || 0) + qty);
+          if (!byWarehouseLatest.has(sku)) byWarehouseLatest.set(sku, new Map());
+          const m = byWarehouseLatest.get(sku)!;
+          const prev = m.get(wh);
+          if (!prev || ts >= prev.date) {
+            m.set(wh, { qty, date: ts });
+          }
+        });
+
+        // Суммируем по последним записям для каждого склада
+        byWarehouseLatest.forEach((m, sku) => {
+          let sum = 0;
+          m.forEach(v => { sum += v.qty; });
+          totals.set(sku, (totals.get(sku) || 0) + sum);
         });
 
         const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
@@ -526,9 +540,9 @@ const InventoryOptionCalculator = () => {
           safety: 0,
           currentStock: totals.get(sku) || 0,
           stockByWarehouse: (() => {
-            const m = byWarehouse.get(sku) || new Map<string, number>();
+            const m = byWarehouseLatest.get(sku) || new Map<string, { qty: number; date: number }>();
             const obj: Record<string, number> = {};
-            m.forEach((v, k) => { obj[k] = v; });
+            m.forEach((v, k) => { obj[k] = v.qty; });
             return obj;
           })(),
           seasonality: baseSeasonality,
@@ -541,14 +555,22 @@ const InventoryOptionCalculator = () => {
         try {
           const { data: prices } = await supabase
             .from('wb_prices')
-            .select('nm_id, raw')
+            .select('nm_id, price, discounted_price, discount, raw')
             .eq('user_id', user.id)
             .limit(50000);
+          const byNm = new Map<string, { price?: number; discounted?: number; discount?: number; vendor?: string }>();
           (prices || []).forEach((p: any) => {
             const sku = String(p.nm_id);
             const vendor = typeof p.raw?.vendorCode === 'string' ? p.raw.vendorCode : (typeof p.raw?.supplierArticle === 'string' ? p.raw.supplierArticle : undefined);
-            if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
+            const cur = byNm.get(sku) || {};
+            cur.price = p.price ?? cur.price;
+            cur.discounted = p.discounted_price ?? cur.discounted;
+            cur.discount = p.discount ?? cur.discount;
+            cur.vendor = cur.vendor || vendor;
+            byNm.set(sku, cur);
           });
+          // применим к initialProducts позже
+          priceSnapshot = byNm;
         } catch {}
         try {
           const { data: an } = await supabase
@@ -565,10 +587,10 @@ const InventoryOptionCalculator = () => {
           });
         } catch {}
 
-        // 3) Продажи -> пересчет mu/sigma и метрик
+        // 3) Продажи -> пересчет mu/sigma и метрик + дозаказ названий из supplierArticle
         const { data: sales, error: salesErr } = await supabase
           .from('wb_sales')
-          .select('date, sku, units, revenue')
+          .select('date, sku, units, revenue, raw')
           .eq('user_id', user.id)
           .limit(20000);
         if (!salesErr && (sales || []).length > 0) {
@@ -578,10 +600,47 @@ const InventoryOptionCalculator = () => {
             units: Number(r.units || 0),
             revenue: typeof r.revenue === 'number' ? r.revenue : undefined
           }));
+          // добираем названия
+          (sales || []).forEach((r: any) => {
+            const sku = String(r.sku);
+            const vendor = typeof r.raw?.supplierArticle === 'string' ? r.raw.supplierArticle : undefined;
+            const subj = typeof r.raw?.subject === 'string' ? r.raw.subject : undefined;
+            if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
+            if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
+          });
           initialProducts = updateProductsFromSales(initialProducts, salesRecords, { weeksWindow: 26 });
         }
 
+        // Применим цены и краткий анализ продаж (30 дней)
         if (initialProducts.length > 0) {
+          // цены
+          if (priceSnapshot) {
+            initialProducts = initialProducts.map(p => {
+              const pr = priceSnapshot!.get(p.sku);
+              return pr ? { ...p, name: nameBySku.get(p.sku) || p.name, retailPrice: pr.discounted ?? pr.price, discountPercent: pr.discount } : p;
+            });
+          }
+          // анализ продаж уже учтен при пересчете, но отдельно посчитаем 30д если есть sales в БД
+          try {
+            const since = new Date(); since.setDate(since.getDate() - 30);
+            const { data: sales30 } = await supabase
+              .from('wb_sales')
+              .select('sku, units, revenue, date')
+              .eq('user_id', user.id)
+              .gte('date', since.toISOString());
+            const agg = new Map<string, { units: number; revenue: number }>();
+            (sales30 || []).forEach((r: any) => {
+              const sku = String(r.sku);
+              const cur = agg.get(sku) || { units: 0, revenue: 0 };
+              cur.units += Number(r.units || 0);
+              cur.revenue += Number(r.revenue || 0);
+              agg.set(sku, cur);
+            });
+            initialProducts = initialProducts.map(p => {
+              const s = agg.get(p.sku);
+              return s ? { ...p, sales30d: s.units, revenue30d: s.revenue } : p;
+            });
+          } catch {}
           setProducts(initialProducts);
         }
       } catch {}
