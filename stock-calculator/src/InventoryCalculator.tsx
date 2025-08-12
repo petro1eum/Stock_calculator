@@ -35,6 +35,8 @@ import {
   getAverageSeasonalDemand,
   optimizeQuantity
 } from "./utils/inventoryCalculations";
+import { updateProductsFromSales } from "./utils/inventoryCalculations";
+import { supabase } from "./utils/supabaseClient";
 
 const InventoryOptionCalculator = () => {
   /* ----- входные значения ----- */
@@ -473,6 +475,79 @@ const InventoryOptionCalculator = () => {
       }));
     }
   }, [products, showProductForm, editingProductId, generateNextSku]);
+
+
+  // Автозагрузка данных из БД (если пользователь авторизован и локальный список пуст)
+  useEffect(() => {
+    const hydrateFromDb = async () => {
+      try {
+        const { data: session } = await supabase.auth.getUser();
+        const user = session?.user;
+        if (!user) return;
+        if (products.length > 0) return;
+
+        // 1) Остатки -> currentStock и автосоздание карточек
+        const { data: stocks, error: stocksErr } = await supabase
+          .from('wb_stocks')
+          .select('sku, quantity, raw')
+          .eq('user_id', user.id)
+          .limit(10000);
+        if (stocksErr) return;
+
+        const totals = new Map<string, number>();
+        const subjBySku = new Map<string, string>();
+        (stocks || []).forEach((r: any) => {
+          const sku = String(r.sku);
+          const qty = Number(r.quantity || 0);
+          totals.set(sku, (totals.get(sku) || 0) + qty);
+          const subj = typeof r.raw?.subject === 'string' ? r.raw.subject : undefined;
+          if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
+        });
+
+        const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
+        let initialProducts: Product[] = Array.from(totals.keys()).map((sku, idx) => ({
+          id: idx + 1,
+          name: subjBySku.get(sku) || 'Товар WB',
+          sku,
+          purchase: 0,
+          margin: 0,
+          muWeek: 0,
+          sigmaWeek: 0,
+          revenue: 0,
+          optQ: 0,
+          optValue: 0,
+          safety: 0,
+          currentStock: totals.get(sku) || 0,
+          seasonality: baseSeasonality,
+          currency: 'RUB',
+          supplier: 'domestic',
+          category: ''
+        }));
+
+        // 2) Продажи -> пересчет mu/sigma и метрик
+        const { data: sales, error: salesErr } = await supabase
+          .from('wb_sales')
+          .select('date, sku, units, revenue')
+          .eq('user_id', user.id)
+          .limit(20000);
+        if (!salesErr && (sales || []).length > 0) {
+          const salesRecords = (sales || []).map((r: any) => ({
+            date: r.date,
+            sku: String(r.sku),
+            units: Number(r.units || 0),
+            revenue: typeof r.revenue === 'number' ? r.revenue : undefined
+          }));
+          initialProducts = updateProductsFromSales(initialProducts, salesRecords, { weeksWindow: 26 });
+        }
+
+        if (initialProducts.length > 0) {
+          setProducts(initialProducts);
+        }
+      } catch {}
+    };
+    void hydrateFromDb();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 
 
