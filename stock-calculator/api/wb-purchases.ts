@@ -7,7 +7,7 @@ function getWBApiKey(): string {
   try {
     const envPath = join(process.cwd(), '..', '.env');
     const envContent = readFileSync(envPath, 'utf8');
-    const match = envContent.match(/WILDBERRIES_API=(.+)/);
+    const match = envContent.match(/wildberries_api=(.+)/);
     return match?.[1]?.trim() || '';
   } catch (error) {
     console.error('Failed to read .env file:', error);
@@ -17,61 +17,39 @@ function getWBApiKey(): string {
 
 // Получение данных о поступлениях/закупках
 async function fetchWBPurchases(apiKey: string, dateFrom: string) {
-  try {
-    // API поступлений Wildberries (когда товар поступил на склад)
-    const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/incomes?dateFrom=${dateFrom}`, {
-      headers: { 
-        'Authorization': apiKey,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`WB API error: ${response.status} ${response.statusText}`);
+  console.log(`[WB Purchases API] Calling with dateFrom: ${dateFrom}`);
+  
+  // API поступлений Wildberries (когда товар поступил на склад)
+  const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/incomes?dateFrom=${dateFrom}`, {
+    headers: { 
+      'Authorization': apiKey,
+      'Content-Type': 'application/json'
     }
-    
-    const data = await response.json();
-    
-    // Преобразуем в наш формат
-    return data.map((income: any) => ({
-      date: income.date?.split('T')[0] || income.date,
-      nmId: income.nmId,
-      subject: income.subject,
-      brand: income.brand,
-      quantity: income.quantity || 1,
-      totalPrice: income.totalPrice || 0,
-      incomeId: income.incomeId,
-      warehouse: income.warehouseName,
-      status: income.status || 'accepted' // принят, в пути, и т.д.
-    }));
-  } catch (error: any) {
-    console.error('WB Purchases API Error:', error.message);
-    // Тестовые данные для демонстрации
-    return [
-      { 
-        date: '2024-01-10', 
-        nmId: 12345, 
-        subject: 'Футболка', 
-        brand: 'TestBrand', 
-        quantity: 100, 
-        totalPrice: 50000, 
-        incomeId: 'INC001',
-        warehouse: 'Коледино',
-        status: 'accepted'
-      },
-      { 
-        date: '2024-01-12', 
-        nmId: 67890, 
-        subject: 'Джинсы', 
-        brand: 'DenimCo', 
-        quantity: 50, 
-        totalPrice: 100000, 
-        incomeId: 'INC002',
-        warehouse: 'Подольск',
-        status: 'accepted'
-      },
-    ];
+  });
+  
+  console.log(`[WB Purchases API] Response status: ${response.status} ${response.statusText}`);
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[WB Purchases API] Error response: ${errorText}`);
+    throw new Error(`WB API error: ${response.status} ${response.statusText} - ${errorText}`);
   }
+  
+  const data = await response.json();
+  console.log(`[WB Purchases API] Received ${data.length} income records`);
+  
+  // Преобразуем в наш формат
+  return data.map((income: any) => ({
+    date: income.date?.split('T')[0] || income.date,
+    nmId: income.nmId,
+    subject: income.subject,
+    brand: income.brand,
+    quantity: income.quantity || 1,
+    totalPrice: income.totalPrice || 0,
+    incomeId: income.incomeId,
+    warehouse: income.warehouseName,
+    status: income.status || 'accepted'
+  }));
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

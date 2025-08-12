@@ -7,7 +7,7 @@ function getWBApiKey(): string {
   try {
     const envPath = join(process.cwd(), '..', '.env');
     const envContent = readFileSync(envPath, 'utf8');
-    const match = envContent.match(/WILDBERRIES_API=(.+)/);
+    const match = envContent.match(/wildberries_api=(.+)/);
     return match?.[1]?.trim() || '';
   } catch (error) {
     console.error('Failed to read .env file:', error);
@@ -17,40 +17,42 @@ function getWBApiKey(): string {
 
 // Реальный вызов WB API с ключом пользователя
 async function fetchWBSales(apiKey: string, dateFrom: string) {
-  try {
-    // API продаж Wildberries
-    const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`, {
-      headers: { 
-        'Authorization': apiKey,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`WB API error: ${response.status} ${response.statusText}`);
+  console.log(`[WB Sales API] Calling with dateFrom: ${dateFrom}`);
+  console.log(`[WB Sales API] Using API key: ${apiKey.substring(0, 20)}...`);
+  
+  // API продаж Wildberries
+  const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`, {
+    headers: { 
+      'Authorization': apiKey,
+      'Content-Type': 'application/json'
     }
-    
-    const data = await response.json();
-    
-    // Преобразуем в наш формат
-    return data.map((sale: any) => ({
-      date: sale.date?.split('T')[0] || sale.date,
-      nmId: sale.nmId,
-      subject: sale.subject,
-      brand: sale.brand,
-      quantity: sale.quantity || 1,
-      totalPrice: sale.totalPrice || sale.finishedPrice,
-      saleID: sale.saleID || sale.gNumber
-    }));
-  } catch (error: any) {
-    // В случае ошибки возвращаем тестовые данные для демонстрации
-    console.error('WB API Error:', error.message);
-    return [
-      { date: '2024-01-15', nmId: 12345, subject: 'Футболка', brand: 'TestBrand', quantity: 5, totalPrice: 2500, saleID: 'S123' },
-      { date: '2024-01-16', nmId: 12345, subject: 'Футболка', brand: 'TestBrand', quantity: 3, totalPrice: 1500, saleID: 'S124' },
-      { date: '2024-01-17', nmId: 67890, subject: 'Джинсы', brand: 'DenimCo', quantity: 2, totalPrice: 4000, saleID: 'S125' },
-    ];
+  });
+  
+  console.log(`[WB Sales API] Response status: ${response.status} ${response.statusText}`);
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[WB Sales API] Error response: ${errorText}`);
+    throw new Error(`WB API error: ${response.status} ${response.statusText} - ${errorText}`);
   }
+  
+  const data = await response.json();
+  console.log(`[WB Sales API] Received ${data.length} sales records`);
+  
+  // Преобразуем в наш формат
+  return data.map((sale: any) => ({
+    date: sale.date?.split('T')[0] || sale.date,
+    nmId: sale.nmId,
+    subject: sale.subject,
+    brand: sale.brand,
+    quantity: sale.quantity || 1,
+    totalPrice: sale.totalPrice || sale.finishedPrice,
+    saleID: sale.saleID || sale.gNumber,
+    warehouseName: sale.warehouseName,
+    countryName: sale.countryName,
+    oblastOkrugName: sale.oblastOkrugName,
+    regionName: sale.regionName
+  }));
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

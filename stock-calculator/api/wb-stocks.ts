@@ -7,7 +7,7 @@ function getWBApiKey(): string {
   try {
     const envPath = join(process.cwd(), '..', '.env');
     const envContent = readFileSync(envPath, 'utf8');
-    const match = envContent.match(/WILDBERRIES_API=(.+)/);
+    const match = envContent.match(/wildberries_api=(.+)/);
     return match?.[1]?.trim() || '';
   } catch (error) {
     console.error('Failed to read .env file:', error);
@@ -17,70 +17,42 @@ function getWBApiKey(): string {
 
 // Получение текущих остатков по всем SKU
 async function fetchWBStocks(apiKey: string, dateFrom: string) {
-  try {
-    // API остатков Wildberries (текущие остатки на складах)
-    const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${dateFrom}`, {
-      headers: { 
-        'Authorization': apiKey,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`WB API error: ${response.status} ${response.statusText}`);
+  console.log(`[WB Stocks API] Calling with dateFrom: ${dateFrom}`);
+  
+  // API остатков Wildberries (текущие остатки на складах)
+  const response = await fetch(`https://suppliers-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${dateFrom}`, {
+    headers: { 
+      'Authorization': apiKey,
+      'Content-Type': 'application/json'
     }
-    
-    const data = await response.json();
-    
-    // Преобразуем в наш формат
-    return data.map((stock: any) => ({
-      date: stock.lastChangeDate?.split('T')[0] || stock.date,
-      nmId: stock.nmId,
-      subject: stock.subject,
-      brand: stock.brand,
-      techSize: stock.techSize,
-      barcode: stock.barcode,
-      quantity: stock.quantity || 0,
-      inWayToClient: stock.inWayToClient || 0,
-      inWayFromClient: stock.inWayFromClient || 0,
-      warehouse: stock.warehouseName,
-      price: stock.Price || 0,
-      discount: stock.Discount || 0
-    }));
-  } catch (error: any) {
-    console.error('WB Stocks API Error:', error.message);
-    // Тестовые данные для демонстрации
-    return [
-      { 
-        date: '2024-01-20', 
-        nmId: 12345, 
-        subject: 'Футболка', 
-        brand: 'TestBrand',
-        techSize: 'M',
-        barcode: '1234567890123',
-        quantity: 45, 
-        inWayToClient: 5,
-        inWayFromClient: 0,
-        warehouse: 'Коледино',
-        price: 500,
-        discount: 10
-      },
-      { 
-        date: '2024-01-20', 
-        nmId: 67890, 
-        subject: 'Джинсы', 
-        brand: 'DenimCo',
-        techSize: '32',
-        barcode: '9876543210987', 
-        quantity: 23, 
-        inWayToClient: 2,
-        inWayFromClient: 1,
-        warehouse: 'Подольск',
-        price: 2000,
-        discount: 15
-      },
-    ];
+  });
+  
+  console.log(`[WB Stocks API] Response status: ${response.status} ${response.statusText}`);
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[WB Stocks API] Error response: ${errorText}`);
+    throw new Error(`WB API error: ${response.status} ${response.statusText} - ${errorText}`);
   }
+  
+  const data = await response.json();
+  console.log(`[WB Stocks API] Received ${data.length} stock records`);
+  
+  // Преобразуем в наш формат
+  return data.map((stock: any) => ({
+    date: stock.lastChangeDate?.split('T')[0] || stock.date,
+    nmId: stock.nmId,
+    subject: stock.subject,
+    brand: stock.brand,
+    techSize: stock.techSize,
+    barcode: stock.barcode,
+    quantity: stock.quantity || 0,
+    inWayToClient: stock.inWayToClient || 0,
+    inWayFromClient: stock.inWayFromClient || 0,
+    warehouse: stock.warehouseName,
+    price: stock.Price || 0,
+    discount: stock.Discount || 0
+  }));
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
