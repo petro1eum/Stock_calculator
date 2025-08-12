@@ -301,7 +301,9 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         stocks_wb: typeof row.stocks?.stocksWb === 'number' ? row.stocks.stocksWb : null,
         raw: row
       }));
-      const { error } = await supabase.from('wb_analytics').upsert(mapped as any, { onConflict: 'user_id,nm_id,period_begin,period_end' as any });
+      const { error } = await supabase
+        .from('wb_analytics')
+        .upsert(mapped as any, { onConflict: 'user_id,nm_id,period_begin,period_end' as any, ignoreDuplicates: true as any });
       if (error) throw error;
       // Обновим имена/категории по vendorCode/object.name, если есть уже созданные карточки
       setProducts(prev => prev.map(p => {
@@ -325,7 +327,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     try {
       const text = await file.text();
       const json = JSON.parse(text);
-      const list = json?.response?.data?.listGoods || json?.listGoods || [];
+      const list = json?.response?.data?.listGoods || json?.data?.listGoods || json?.listGoods || [];
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('Не авторизован'); return; }
       const rows: any[] = [];
@@ -352,7 +354,9 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         }
       });
       if (rows.length > 0) {
-        const { error } = await supabase.from('wb_prices').upsert(rows as any, { onConflict: 'user_id,nm_id,size_id' as any });
+        const { error } = await supabase
+          .from('wb_prices')
+          .upsert(rows as any, { onConflict: 'user_id,nm_id,size_id' as any, ignoreDuplicates: true as any });
         if (error) throw error;
       }
       toast.success(`Импортировано ценовых записей: ${rows.length}`);
@@ -510,6 +514,156 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     toast.success('Шаблон CSV скачан');
   };
 
+  // ===== Экспорт данных из БД в JSON (форматы совместимы с импортом) =====
+  const saveJson = (filename: string, obj: unknown) => {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
+
+  const exportSalesJsonFromDb = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const { data, error } = await supabase
+        .from('wb_sales')
+        .select('*')
+        .eq('user_id', user.id)
+        .limit(50000);
+      if (error) throw error;
+      const arr = (data || []).map((r: any) => ({
+        date: (r.date || '').split('T')[0],
+        nmId: Number(r.sku),
+        subject: typeof r.raw?.subject === 'string' ? r.raw.subject : undefined,
+        brand: typeof r.raw?.brand === 'string' ? r.raw.brand : undefined,
+        quantity: Number(r.units || 0),
+        totalPrice: typeof r.revenue === 'number' ? r.revenue : undefined,
+        saleID: r.sale_id,
+        warehouseName: r.warehouse || undefined
+      }));
+      saveJson(`wb-sales-${new Date().toISOString().split('T')[0]}.json`, arr);
+      toast.success(`Скачано продаж: ${arr.length}`);
+    } catch (e: any) { toast.error(e.message || 'Ошибка экспорта продаж'); }
+  };
+
+  const exportPurchasesJsonFromDb = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const { data, error } = await supabase
+        .from('wb_purchases')
+        .select('*')
+        .eq('user_id', user.id)
+        .limit(50000);
+      if (error) throw error;
+      const arr = (data || []).map((r: any) => ({
+        date: (r.date || '').split('T')[0],
+        nmId: Number(r.sku),
+        quantity: Number(r.quantity || 0),
+        totalPrice: typeof r.total_price === 'number' ? r.total_price : 0,
+        incomeId: r.income_id,
+        warehouse: r.warehouse || undefined,
+        status: typeof r.raw?.status === 'string' ? r.raw.status : undefined
+      }));
+      saveJson(`wb-purchases-${new Date().toISOString().split('T')[0]}.json`, arr);
+      toast.success(`Скачано поставок: ${arr.length}`);
+    } catch (e: any) { toast.error(e.message || 'Ошибка экспорта поставок'); }
+  };
+
+  const exportStocksJsonFromDb = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const { data, error } = await supabase
+        .from('wb_stocks')
+        .select('*')
+        .eq('user_id', user.id)
+        .limit(50000);
+      if (error) throw error;
+      const arr = (data || []).map((r: any) => ({
+        date: (r.date || '').split('T')[0],
+        nmId: Number(r.sku),
+        subject: typeof r.raw?.subject === 'string' ? r.raw.subject : undefined,
+        brand: typeof r.raw?.brand === 'string' ? r.raw.brand : undefined,
+        techSize: r.tech_size || undefined,
+        barcode: r.barcode,
+        quantity: Number(r.quantity || 0),
+        inWayToClient: Number(r.in_way_to_client || 0),
+        inWayFromClient: Number(r.in_way_from_client || 0),
+        warehouse: r.warehouse || undefined,
+        price: typeof r.price === 'number' ? r.price : undefined,
+        discount: typeof r.discount === 'number' ? r.discount : undefined
+      }));
+      saveJson(`wb-stocks-${new Date().toISOString().split('T')[0]}.json`, arr);
+      toast.success(`Скачано остатков: ${arr.length}`);
+    } catch (e: any) { toast.error(e.message || 'Ошибка экспорта остатков'); }
+  };
+
+  const exportAnalyticsJsonFromDb = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const { data, error } = await supabase
+        .from('wb_analytics')
+        .select('*')
+        .eq('user_id', user.id)
+        .limit(20000);
+      if (error) throw error;
+      const arr = (data || []).map((r: any) => ({
+        nmID: Number(r.nm_id),
+        vendorCode: r.raw?.vendorCode,
+        brandName: r.raw?.brandName,
+        object: r.raw?.object,
+        statistics: r.metrics,
+        stocks: { stocksMp: r.raw?.stocks?.stocksMp, stocksWb: r.stocks_wb ?? r.raw?.stocks?.stocksWb }
+      }));
+      saveJson(`wb-analytics-${new Date().toISOString().split('T')[0]}.json`, arr);
+      toast.success(`Скачано аналитики: ${arr.length}`);
+    } catch (e: any) { toast.error(e.message || 'Ошибка экспорта аналитики'); }
+  };
+
+  const exportPricesJsonFromDb = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const { data, error } = await supabase
+        .from('wb_prices')
+        .select('*')
+        .eq('user_id', user.id)
+        .limit(50000);
+      if (error) throw error;
+      // Группируем по nm_id -> listGoods
+      const map = new Map<string, any>();
+      (data || []).forEach((r: any) => {
+        const key = String(r.nm_id);
+        if (!map.has(key)) {
+          map.set(key, {
+            nmID: Number(r.nm_id),
+            vendorCode: r.raw?.vendorCode,
+            sizes: [],
+            currencyIsoCode4217: r.currency || undefined,
+            discount: typeof r.discount === 'number' ? r.discount : undefined,
+            clubDiscount: undefined,
+            editableSizePrice: false
+          });
+        }
+        const bucket = map.get(key);
+        bucket.sizes.push({
+          sizeID: Number(r.size_id),
+          price: typeof r.price === 'number' ? r.price : undefined,
+          discountedPrice: typeof r.discounted_price === 'number' ? r.discounted_price : undefined,
+          clubDiscountedPrice: typeof r.discounted_price === 'number' ? r.discounted_price : undefined,
+          techSizeName: r.raw?.size?.techSizeName || undefined
+        });
+      });
+      const payload = { data: { listGoods: Array.from(map.values()) }, error: false, errorText: '' };
+      saveJson(`wb-prices-${new Date().toISOString().split('T')[0]}.json`, payload);
+      toast.success(`Скачано ценовых карточек: ${map.size}`);
+    } catch (e: any) { toast.error(e.message || 'Ошибка экспорта цен'); }
+  };
+
   return (
     <div className="p-6">
       
@@ -591,7 +745,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         {/* База данных */}
         <div>
           <h2 className="text-sm font-medium text-gray-700 mb-3">БАЗА ДАННЫХ</h2>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-2">
             <button 
               onClick={applySalesFromDB} 
               className="px-4 py-2 bg-gray-800 text-white text-sm"
@@ -604,6 +758,12 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
             >
               Загрузить остатки
             </button>
+            {/* Экспорт JSON для проверки совместимости форматов */}
+            <button onClick={exportSalesJsonFromDb} className="px-4 py-2 bg-gray-700 text-white text-sm">Скачать продажи JSON</button>
+            <button onClick={exportPurchasesJsonFromDb} className="px-4 py-2 bg-gray-700 text-white text-sm">Скачать поставки JSON</button>
+            <button onClick={exportStocksJsonFromDb} className="px-4 py-2 bg-gray-700 text-white text-sm">Скачать остатки JSON</button>
+            <button onClick={exportAnalyticsJsonFromDb} className="px-4 py-2 bg-gray-700 text-white text-sm">Скачать аналитику JSON</button>
+            <button onClick={exportPricesJsonFromDb} className="px-4 py-2 bg-gray-700 text-white text-sm">Скачать цены JSON</button>
           </div>
         </div>
 
