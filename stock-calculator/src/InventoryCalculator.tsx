@@ -546,7 +546,7 @@ const InventoryOptionCalculator = () => {
             .limit(50000);
           (prices || []).forEach((p: any) => {
             const sku = String(p.nm_id);
-            const vendor = typeof p.raw?.vendorCode === 'string' ? p.raw.vendorCode : undefined;
+            const vendor = typeof p.raw?.vendorCode === 'string' ? p.raw.vendorCode : (typeof p.raw?.supplierArticle === 'string' ? p.raw.supplierArticle : undefined);
             if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
           });
         } catch {}
@@ -558,7 +558,7 @@ const InventoryOptionCalculator = () => {
             .limit(50000);
           (an || []).forEach((a: any) => {
             const sku = String(a.nm_id);
-            const vendor = typeof a.raw?.vendorCode === 'string' ? a.raw.vendorCode : undefined;
+            const vendor = typeof a.raw?.vendorCode === 'string' ? a.raw.vendorCode : (typeof a.raw?.supplierArticle === 'string' ? a.raw.supplierArticle : undefined);
             const cat = typeof a.raw?.object?.name === 'string' ? a.raw.object.name : undefined;
             if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
             if (cat) subjBySku.set(sku, cat);

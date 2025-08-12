@@ -307,7 +307,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       if (!key) throw new Error('Сначала сохраните ключ WB в настройках пользователя');
       const url = `https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`;
       const data = await fetchWithRetry(url, key, true);
-      const mapped: Array<{ date: string; nmId: number; subject?: string; brand?: string; quantity: number; totalPrice?: number; saleID?: string; warehouseName?: string }> = (data || []).map((sale: any) => ({
+      const mapped: Array<{ date: string; nmId: number; subject?: string; brand?: string; quantity: number; totalPrice?: number; saleID?: string; warehouseName?: string; supplierArticle?: string }> = (data || []).map((sale: any) => ({
         date: sale.date?.split('T')[0] || sale.date,
         nmId: sale.nmId,
         subject: sale.subject,
@@ -315,7 +315,8 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
         quantity: sale.quantity || 1,
         totalPrice: sale.totalPrice || sale.finishedPrice,
         saleID: sale.saleID || sale.gNumber,
-        warehouseName: sale.warehouseName
+        warehouseName: sale.warehouseName,
+        supplierArticle: sale.supplierArticle
       }));
       const res = { type: 'sales', count: mapped.length, data: mapped };
       setResult(res);
@@ -333,7 +334,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
           const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
           const newItems = missing.map((sku, idx) => ({
             id: prev.length + idx + 1,
-            name: (() => { const subj = mapped.find((m: any) => String(m.nmId) === sku)?.subject; return typeof subj === 'string' ? subj : 'Товар WB'; })(),
+            name: (() => { const rec = mapped.find((m: any) => String(m.nmId) === sku); const n = rec?.supplierArticle; return typeof n === 'string' && n.trim() ? n : (typeof rec?.subject === 'string' ? rec!.subject : 'Товар WB'); })(),
             sku,
             purchase: 0,
             margin: 0,
@@ -347,7 +348,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
             seasonality: baseSeasonality,
             currency: 'RUB',
             supplier: 'domestic',
-            category: ''
+            category: (() => { const rec = mapped.find((m: any) => String(m.nmId) === sku); return typeof rec?.subject === 'string' ? rec!.subject : ''; })()
           }));
           const combined = [...prev, ...newItems];
           return updateProductsFromSales(combined, salesRecords, { weeksWindow: 26 });
