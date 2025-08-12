@@ -1,4 +1,5 @@
 import React from 'react';
+import UserMenu from './UserMenu';
 
 interface SimpleLayoutProps {
   children: React.ReactNode;
@@ -25,11 +26,7 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
     { id: 'theory', name: 'Теория' },
   ];
 
-  const handleLogout = async () => {
-    const { supabase } = await import('../utils/supabaseClient');
-    await supabase.auth.signOut();
-    window.location.reload();
-  };
+  // Logout перенесён в UserMenu
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -60,9 +57,7 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
                   )}
                 </button>
               ))}
-              <button onClick={handleLogout} className="ml-2 px-3 py-2 rounded-md text-sm font-medium bg-red-500 text-white hover:bg-red-600">
-                Выйти
-              </button>
+              <UserMenu />
             </nav>
           </div>
         </div>
