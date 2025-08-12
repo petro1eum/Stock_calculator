@@ -432,321 +432,366 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Заголовок */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
+      <div className="max-w-7xl mx-auto p-8 space-y-8">
+        {/* Header */}
+        <div className="relative overflow-hidden bg-white/80 backdrop-blur-sm rounded-3xl border border-slate-200/60 p-8 shadow-xl shadow-slate-900/5">
+          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-pink-500/5"></div>
+          <div className="relative flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Управление данными</h1>
-              <p className="text-gray-600 mt-1">Импорт, экспорт и синхронизация данных товарного портфеля</p>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 bg-clip-text text-transparent">
+                Data Management
+              </h1>
+              <p className="text-slate-600 mt-2 text-lg font-medium">Import, export & sync your portfolio data</p>
             </div>
-            <div className="flex items-center space-x-4 text-sm text-gray-500">
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                Склад: {selectedWarehouse === 'wildberries' ? 'Wildberries' : 'Не выбран'}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Статистика */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">{products.length}</p>
-                <p className="text-sm text-gray-600">Товаров</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.seasonality?.enabled).length}</p>
-                <p className="text-sm text-gray-600">Сезонных</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.currentStock && p.currentStock > 0).length}</p>
-                <p className="text-sm text-gray-600">В наличии</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.currency && p.currency !== 'RUB').length}</p>
-                <p className="text-sm text-gray-600">В валюте</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.volumeDiscounts && p.volumeDiscounts.length > 0).length}</p>
-                <p className="text-sm text-gray-600">Со скидками</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-indigo-100 rounded-lg">
-                <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">{products.filter(p => p.supplier && p.supplier !== 'domestic').length}</p>
-                <p className="text-sm text-gray-600">Импорт</p>
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-2 rounded-2xl border border-emerald-200/60">
+                <div className="w-2 h-2 bg-gradient-to-r from-emerald-400 to-teal-500 rounded-full mr-3 animate-pulse"></div>
+                <span className="text-emerald-700 font-medium">
+                  {selectedWarehouse === 'wildberries' ? 'Wildberries Connected' : 'No Warehouse'}
+                </span>
               </div>
             </div>
           </div>
         </div>
 
+        {/* Modern Stats Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+          {[
+            {
+              value: products.length,
+              label: 'Products',
+              icon: '📦',
+              gradient: 'from-blue-500 to-cyan-500',
+              bg: 'from-blue-50 to-cyan-50'
+            },
+            {
+              value: products.filter(p => p.seasonality?.enabled).length,
+              label: 'Seasonal',
+              icon: '🗓',
+              gradient: 'from-purple-500 to-violet-500',
+              bg: 'from-purple-50 to-violet-50'
+            },
+            {
+              value: products.filter(p => p.currentStock && p.currentStock > 0).length,
+              label: 'In Stock',
+              icon: '✅',
+              gradient: 'from-emerald-500 to-teal-500',
+              bg: 'from-emerald-50 to-teal-50'
+            },
+            {
+              value: products.filter(p => p.currency && p.currency !== 'RUB').length,
+              label: 'Foreign',
+              icon: '💱',
+              gradient: 'from-amber-500 to-orange-500',
+              bg: 'from-amber-50 to-orange-50'
+            },
+            {
+              value: products.filter(p => p.volumeDiscounts && p.volumeDiscounts.length > 0).length,
+              label: 'Discounted',
+              icon: '🏷',
+              gradient: 'from-rose-500 to-pink-500',
+              bg: 'from-rose-50 to-pink-50'
+            },
+            {
+              value: products.filter(p => p.supplier && p.supplier !== 'domestic').length,
+              label: 'Imported',
+              icon: '🌍',
+              gradient: 'from-indigo-500 to-blue-500',
+              bg: 'from-indigo-50 to-blue-50'
+            }
+          ].map((stat, index) => (
+            <div key={index} className="group relative overflow-hidden bg-white/70 backdrop-blur-sm rounded-2xl border border-slate-200/60 p-6 hover:shadow-xl hover:shadow-slate-900/10 transition-all duration-300 hover:-translate-y-1">
+              <div className={`absolute inset-0 bg-gradient-to-br ${stat.bg} opacity-0 group-hover:opacity-100 transition-opacity duration-300`}></div>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={`text-2xl bg-gradient-to-r ${stat.gradient} w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg`}>
+                    {stat.icon}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                    {stat.value.toLocaleString()}
+                  </p>
+                  <p className="text-slate-600 font-medium">{stat.label}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Action Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Экспорт */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center mb-6">
-              <div className="p-2 bg-green-100 rounded-lg mr-3">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
+          {/* Export */}
+          <div className="group relative overflow-hidden bg-white/80 backdrop-blur-sm rounded-3xl border border-slate-200/60 p-8 hover:shadow-2xl hover:shadow-emerald-500/10 transition-all duration-500">
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-teal-500/5 to-green-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+            <div className="relative">
+              <div className="flex items-center mb-6">
+                <div className="w-14 h-14 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center mr-4 shadow-xl">
+                  <span className="text-2xl">⬆️</span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Export</h2>
+                  <p className="text-slate-600">Save your data</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Экспорт</h2>
-                <p className="text-sm text-gray-600">Сохранение данных</p>
+              <div className="space-y-4">
+                <button 
+                  onClick={exportToCSV} 
+                  disabled={products.length === 0}
+                  className="w-full group/btn relative overflow-hidden bg-gradient-to-r from-emerald-600 to-teal-600 disabled:from-slate-400 disabled:to-slate-500 text-white font-semibold py-4 px-6 rounded-2xl transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/25 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:hover:transform-none"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-emerald-400 to-teal-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                  <span className="relative flex items-center justify-center">
+                    <span className="mr-3 text-lg">📊</span>
+                    CSV (Excel)
+                  </span>
+                </button>
+                <button 
+                  onClick={exportToJSON} 
+                  disabled={products.length === 0}
+                  className="w-full group/btn relative overflow-hidden bg-gradient-to-r from-blue-600 to-indigo-600 disabled:from-slate-400 disabled:to-slate-500 text-white font-semibold py-4 px-6 rounded-2xl transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/25 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:hover:transform-none"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-indigo-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                  <span className="relative flex items-center justify-center">
+                    <span className="mr-3 text-lg">📄</span>
+                    JSON (Full)
+                  </span>
+                </button>
               </div>
-            </div>
-            <div className="space-y-3">
-              <button 
-                onClick={exportToCSV} 
-                disabled={products.length === 0}
-                className="w-full flex items-center justify-center px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                CSV (Excel)
-              </button>
-              <button 
-                onClick={exportToJSON} 
-                disabled={products.length === 0}
-                className="w-full flex items-center justify-center px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2v0a2 2 0 01-2-2v-1" />
-                </svg>
-                JSON (полный)
-              </button>
             </div>
           </div>
 
-          {/* Импорт файлов */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center mb-6">
-              <div className="p-2 bg-blue-100 rounded-lg mr-3">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                </svg>
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Импорт файлов</h2>
-                <p className="text-sm text-gray-600">Загрузка из файлов</p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" id="csv-import" />
-                <label htmlFor="csv-import" className="w-full flex items-center justify-center px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 cursor-pointer transition-colors">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  CSV товары
-                </label>
-              </div>
-              <div>
-                <input type="file" accept=".json" onChange={importFromJSON} className="hidden" id="json-import" />
-                <label htmlFor="json-import" className="w-full flex items-center justify-center px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2v0a2 2 0 01-2-2v-1" />
-                  </svg>
-                  JSON полный
-                </label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+          {/* Import */}
+          <div className="group relative overflow-hidden bg-white/80 backdrop-blur-sm rounded-3xl border border-slate-200/60 p-8 hover:shadow-2xl hover:shadow-blue-500/10 transition-all duration-500">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+            <div className="relative">
+              <div className="flex items-center mb-6">
+                <div className="w-14 h-14 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mr-4 shadow-xl">
+                  <span className="text-2xl">⬇️</span>
+                </div>
                 <div>
-                  <input type="file" accept=".csv" onChange={importSalesCSV} className="hidden" id="sales-import" />
-                  <label htmlFor="sales-import" className="w-full flex items-center justify-center px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer transition-colors">
-                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                    </svg>
-                    Продажи CSV
+                  <h2 className="text-xl font-bold text-slate-900">Import</h2>
+                  <p className="text-slate-600">Load from files</p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" id="csv-import" />
+                  <label htmlFor="csv-import" className="w-full group/btn cursor-pointer relative overflow-hidden bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold py-4 px-6 rounded-2xl transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/25 hover:-translate-y-0.5 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-400 to-teal-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                    <span className="relative flex items-center">
+                      <span className="mr-3 text-lg">📊</span>
+                      CSV Products
+                    </span>
                   </label>
                 </div>
                 <div>
-                  <input type="file" accept=".xlsx,.xls" onChange={importSalesXLSX} className="hidden" id="sales-import-xlsx" />
-                  <label htmlFor="sales-import-xlsx" className="w-full flex items-center justify-center px-3 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 cursor-pointer transition-colors">
-                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                    Excel
+                  <input type="file" accept=".json" onChange={importFromJSON} className="hidden" id="json-import" />
+                  <label htmlFor="json-import" className="w-full group/btn cursor-pointer relative overflow-hidden bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold py-4 px-6 rounded-2xl transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/25 hover:-translate-y-0.5 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-indigo-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                    <span className="relative flex items-center">
+                      <span className="mr-3 text-lg">📄</span>
+                      JSON Full
+                    </span>
                   </label>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <input type="file" accept=".csv" onChange={importSalesCSV} className="hidden" id="sales-import" />
+                    <label htmlFor="sales-import" className="w-full group/btn cursor-pointer relative overflow-hidden bg-gradient-to-r from-violet-600 to-purple-600 text-white font-medium py-3 px-4 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-violet-500/25 hover:-translate-y-0.5 flex items-center justify-center text-sm">
+                      <span className="relative flex items-center">
+                        <span className="mr-2 text-base">📈</span>
+                        Sales CSV
+                      </span>
+                    </label>
+                  </div>
+                  <div>
+                    <input type="file" accept=".xlsx,.xls" onChange={importSalesXLSX} className="hidden" id="sales-import-xlsx" />
+                    <label htmlFor="sales-import-xlsx" className="w-full group/btn cursor-pointer relative overflow-hidden bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium py-3 px-4 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/25 hover:-translate-y-0.5 flex items-center justify-center text-sm">
+                      <span className="relative flex items-center">
+                        <span className="mr-2 text-base">📊</span>
+                        Excel
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                <button onClick={generateSampleCSV} className="w-full relative bg-gradient-to-r from-slate-600 to-slate-700 text-white font-medium py-3 px-6 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-slate-500/25 hover:-translate-y-0.5">
+                  <span className="flex items-center justify-center">
+                    <span className="mr-3 text-lg">📝</span>
+                    Download Template
+                  </span>
+                </button>
               </div>
-              <button onClick={generateSampleCSV} className="w-full px-4 py-2 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
-                Скачать шаблон
-              </button>
             </div>
           </div>
 
-          {/* База данных */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center mb-6">
-              <div className="p-2 bg-purple-100 rounded-lg mr-3">
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-                </svg>
+          {/* Database */}
+          <div className="group relative overflow-hidden bg-white/80 backdrop-blur-sm rounded-3xl border border-slate-200/60 p-8 hover:shadow-2xl hover:shadow-purple-500/10 transition-all duration-500">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-violet-500/5 to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+            <div className="relative">
+              <div className="flex items-center mb-6">
+                <div className="w-14 h-14 bg-gradient-to-r from-purple-500 to-violet-600 rounded-2xl flex items-center justify-center mr-4 shadow-xl">
+                  <span className="text-2xl">🗄️</span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Database</h2>
+                  <p className="text-slate-600">Sync data</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">База данных</h2>
-                <p className="text-sm text-gray-600">Синхронизация</p>
+              <div className="space-y-4">
+                <button 
+                  onClick={applySalesFromDB} 
+                  className="w-full group/btn relative overflow-hidden bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold py-4 px-6 rounded-2xl transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/25 hover:-translate-y-0.5"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-indigo-400 to-purple-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                  <span className="relative flex items-center justify-center">
+                    <span className="mr-3 text-lg">📈</span>
+                    Load Sales
+                  </span>
+                </button>
+                <button 
+                  onClick={applyStocksFromDB} 
+                  className="w-full group/btn relative overflow-hidden bg-gradient-to-r from-amber-600 to-orange-600 text-white font-semibold py-4 px-6 rounded-2xl transition-all duration-300 hover:shadow-xl hover:shadow-amber-500/25 hover:-translate-y-0.5"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-orange-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                  <span className="relative flex items-center justify-center">
+                    <span className="mr-3 text-lg">📦</span>
+                    Load Stock
+                  </span>
+                </button>
               </div>
-            </div>
-            <div className="space-y-3">
-              <button 
-                onClick={applySalesFromDB} 
-                className="w-full flex items-center justify-center px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                Загрузить продажи
-              </button>
-              <button 
-                onClick={applyStocksFromDB} 
-                className="w-full flex items-center justify-center px-4 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
-                </svg>
-                Загрузить остатки
-              </button>
             </div>
           </div>
         </div>
 
-        {/* Wildberries интеграция */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center mb-6">
-            <div className="p-2 bg-purple-100 rounded-lg mr-3">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+        {/* Wildberries Integration */}
+        <div className="relative overflow-hidden bg-white/80 backdrop-blur-sm rounded-3xl border border-slate-200/60 p-8 shadow-xl shadow-slate-900/5">
+          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 via-pink-500/5 to-indigo-500/5"></div>
+          <div className="relative">
+            <div className="flex items-center mb-8">
+              <div className="w-16 h-16 bg-gradient-to-r from-purple-600 to-pink-600 rounded-3xl flex items-center justify-center mr-6 shadow-xl">
+                <span className="text-3xl">🛍️</span>
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-700 to-pink-700 bg-clip-text text-transparent">
+                  Wildberries Integration
+                </h2>
+                <p className="text-slate-600 text-lg">API connection & file imports</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* API Section */}
+              <div className="space-y-6">
+                <div className="group relative overflow-hidden bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200/60 rounded-2xl p-6 hover:shadow-lg transition-all duration-300">
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-pink-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="relative">
+                    <h3 className="text-lg font-bold text-purple-900 mb-4 flex items-center">
+                      <span className="mr-3 text-xl">🔑</span>
+                      API Configuration
+                    </h3>
+                    <WbKeyManager />
+                  </div>
+                </div>
+                <div className="group relative overflow-hidden bg-gradient-to-br from-slate-50 to-gray-50 border border-slate-200/60 rounded-2xl p-6 hover:shadow-lg transition-all duration-300">
+                  <div className="relative">
+                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
+                      <span className="mr-3 text-xl">🚀</span>
+                      Live Import
+                    </h3>
+                    <WildberriesImporter onUpdateProducts={setProducts} />
+                  </div>
+                </div>
+              </div>
+
+              {/* File Import Section */}
+              <div className="space-y-6">
+                <div className="group relative overflow-hidden bg-gradient-to-br from-slate-50 to-gray-50 border border-slate-200/60 rounded-2xl p-6 hover:shadow-lg transition-all duration-300">
+                  <div className="relative">
+                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
+                      <span className="mr-3 text-xl">📁</span>
+                      Local JSON Files
+                    </h3>
+                    <div className="space-y-3">
+                      <div>
+                        <input type="file" accept=".json" onChange={importWBSalesJSON} className="hidden" id="wb-sales-json" />
+                        <label htmlFor="wb-sales-json" className="w-full group/btn cursor-pointer relative overflow-hidden bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-medium py-3 px-4 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-0.5 flex items-center justify-center">
+                          <div className="absolute inset-0 bg-gradient-to-r from-indigo-400 to-blue-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                          <span className="relative flex items-center">
+                            <span className="mr-3 text-lg">📈</span>
+                            Sales Data JSON
+                          </span>
+                        </label>
+                      </div>
+                      <div>
+                        <input type="file" accept=".json" onChange={importWBPurchasesJSON} className="hidden" id="wb-purchases-json" />
+                        <label htmlFor="wb-purchases-json" className="w-full group/btn cursor-pointer relative overflow-hidden bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-medium py-3 px-4 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/25 hover:-translate-y-0.5 flex items-center justify-center">
+                          <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-cyan-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                          <span className="relative flex items-center">
+                            <span className="mr-3 text-lg">📦</span>
+                            Purchases JSON
+                          </span>
+                        </label>
+                      </div>
+                      <div>
+                        <input type="file" accept=".json" onChange={importWBStocksJSON} className="hidden" id="wb-stocks-json" />
+                        <label htmlFor="wb-stocks-json" className="w-full group/btn cursor-pointer relative overflow-hidden bg-gradient-to-r from-amber-600 to-orange-600 text-white font-medium py-3 px-4 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/25 hover:-translate-y-0.5 flex items-center justify-center">
+                          <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-orange-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+                          <span className="relative flex items-center">
+                            <span className="mr-3 text-lg">📊</span>
+                            Stock Data JSON
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Important Notes */}
+        <div className="relative overflow-hidden bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/60 rounded-3xl p-8">
+          <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-orange-500/5"></div>
+          <div className="relative flex items-start">
+            <div className="flex-shrink-0 mr-6">
+              <div className="w-12 h-12 bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-lg">
+                <span className="text-2xl">⚠️</span>
+              </div>
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Wildberries</h2>
-              <p className="text-sm text-gray-600">API интеграция и локальные файлы</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* API ключ и прямой импорт */}
-            <div className="space-y-4">
-              <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                <h3 className="font-medium text-purple-900 mb-3">API ключ</h3>
-                <WbKeyManager />
-              </div>
-              <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                <h3 className="font-medium text-gray-900 mb-3">Прямой импорт из API</h3>
-                <WildberriesImporter onUpdateProducts={setProducts} />
-              </div>
-            </div>
-
-            {/* Локальные JSON файлы */}
-            <div className="space-y-4">
-              <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                <h3 className="font-medium text-gray-900 mb-3">Локальные JSON файлы</h3>
-                <div className="grid grid-cols-1 gap-2">
-                  <div>
-                    <input type="file" accept=".json" onChange={importWBSalesJSON} className="hidden" id="wb-sales-json" />
-                    <label htmlFor="wb-sales-json" className="w-full flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer transition-colors">
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                      </svg>
-                      Продажи JSON
-                    </label>
-                  </div>
-                  <div>
-                    <input type="file" accept=".json" onChange={importWBPurchasesJSON} className="hidden" id="wb-purchases-json" />
-                    <label htmlFor="wb-purchases-json" className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
-                      </svg>
-                      Поставки JSON
-                    </label>
-                  </div>
-                  <div>
-                    <input type="file" accept=".json" onChange={importWBStocksJSON} className="hidden" id="wb-stocks-json" />
-                    <label htmlFor="wb-stocks-json" className="w-full flex items-center justify-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 cursor-pointer transition-colors">
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-                      </svg>
-                      Остатки JSON
-                    </label>
-                  </div>
+              <h3 className="text-xl font-bold text-amber-900 mb-4">Important Guidelines</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-amber-800">
+                <div>
+                  <h4 className="font-semibold mb-2 flex items-center">
+                    <span className="mr-2">🔄</span>
+                    Data Replacement
+                  </h4>
+                  <p className="text-sm">Product imports replace current data completely</p>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Предупреждения */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5C3.312 17.333 4.273 19 5.814 19z" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-amber-800">Важные замечания</h3>
-              <div className="mt-2 text-sm text-amber-700">
-                <ul className="list-disc space-y-1 ml-5">
-                  <li>Импорт товаров заменяет текущий список</li>
-                  <li>Импорт продаж пересчитывает параметры спроса для существующих товаров</li>
-                  <li>Создавайте резервные копии перед импортом больших объемов</li>
-                  <li>CSV файлы должны соответствовать шаблону с заголовками</li>
-                </ul>
+                <div>
+                  <h4 className="font-semibold mb-2 flex items-center">
+                    <span className="mr-2">📊</span>
+                    Sales Processing
+                  </h4>
+                  <p className="text-sm">Sales data recalculates demand parameters automatically</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2 flex items-center">
+                    <span className="mr-2">💾</span>
+                    Backup First
+                  </h4>
+                  <p className="text-sm">Always create backups before large imports</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2 flex items-center">
+                    <span className="mr-2">📋</span>
+                    File Format
+                  </h4>
+                  <p className="text-sm">CSV files must include proper headers</p>
+                </div>
               </div>
             </div>
           </div>
