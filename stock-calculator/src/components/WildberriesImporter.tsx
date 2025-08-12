@@ -116,6 +116,22 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     }
   };
 
+  const fetchExistingByIds = async (table: 'wb_sales' | 'wb_purchases', idColumn: 'sale_id' | 'income_id', ids: string[], userId: string): Promise<Set<string>> => {
+    const existing = new Set<string>();
+    const chunkSize = 800; // safe for URL length
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { data, error } = await supabase
+        .from(table)
+        .select(idColumn)
+        .eq('user_id', userId)
+        .in(idColumn, chunk as any);
+      if (error) continue;
+      (data as any[]).forEach((row) => existing.add(String(row[idColumn])));
+    }
+    return existing;
+  };
+
   const safeSaveToDb = async (type: 'sales' | 'purchases' | 'stocks', records: any[]) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -132,9 +148,13 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
           warehouse: r.warehouseName || null,
           raw: r
         }));
-        await supabase
-          .from('wb_sales')
-          .upsert(rows as any, { onConflict: 'user_id,sale_id' as any, ignoreDuplicates: true as any });
+        // Вставляем только новые sale_id, чтобы не триггерить UPDATE под RLS
+        const ids = rows.map(r => r.sale_id);
+        const existing = await fetchExistingByIds('wb_sales', 'sale_id', ids, user.id);
+        const onlyNew = rows.filter(r => !existing.has(r.sale_id));
+        if (onlyNew.length > 0) {
+          await supabase.from('wb_sales').insert(onlyNew as any);
+        }
         return;
       }
 
@@ -149,9 +169,12 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
           warehouse: r.warehouse || r.warehouseName || null,
           raw: r
         }));
-        await supabase
-          .from('wb_purchases')
-          .upsert(rows as any, { onConflict: 'user_id,income_id' as any, ignoreDuplicates: true as any });
+        const ids = rows.map(r => r.income_id);
+        const existing = await fetchExistingByIds('wb_purchases', 'income_id', ids, user.id);
+        const onlyNew = rows.filter(r => !existing.has(r.income_id));
+        if (onlyNew.length > 0) {
+          await supabase.from('wb_purchases').insert(onlyNew as any);
+        }
         return;
       }
 
