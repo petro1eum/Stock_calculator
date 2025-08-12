@@ -71,7 +71,6 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       toast('В БД нет записей остатков');
       return;
     }
-    // Суммируем количество по SKU (текущая оценка остатков)
     const totals = new Map<string, number>();
     rows.forEach((r: any) => {
       const sku = String(r.sku);
@@ -83,6 +82,105 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0)
     })));
     toast.success(`Обновлены остатки по SKU: ${totals.size}`);
+  };
+
+  // Импорт локальных WB JSON файлов
+  const importWBSalesJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const mapped = (data || []).map((s: any) => ({
+        user_id: user.id,
+        date: `${(s.date?.split('T')[0] || s.date)}T00:00:00Z`,
+        sku: String(s.nmId),
+        units: Number(s.quantity || 0),
+        revenue: s.totalPrice !== undefined ? Number(s.totalPrice) : (s.finishedPrice !== undefined ? Number(s.finishedPrice) : null),
+        sale_id: String(s.saleID || s.gNumber || s.srid || `${s.nmId}-${s.date}-${s.barcode || ''}`),
+        warehouse: s.warehouseName || null,
+        raw: s
+      }));
+      const { error } = await supabase.from('wb_sales').upsert(mapped as any, { onConflict: 'user_id,sale_id' as any });
+      if (error) throw error;
+      // Пересчет спроса
+      const salesRecords: SalesRecord[] = mapped.map((m: any) => ({ date: m.date, sku: m.sku, units: m.units, revenue: m.revenue ?? undefined }));
+      setProducts(prev => updateProductsFromSales(prev, salesRecords, { weeksWindow: 26 }));
+      toast.success(`Импортировано продаж: ${mapped.length}`);
+    } catch (err: any) {
+      toast.error(`Ошибка импорта продаж: ${err.message || err}`);
+    }
+  };
+
+  const importWBPurchasesJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const mapped = (data || []).map((r: any) => ({
+        user_id: user.id,
+        date: `${(r.date?.split('T')[0] || r.date)}T00:00:00Z`,
+        sku: String(r.nmId),
+        quantity: Number(r.quantity || 0),
+        total_price: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
+        income_id: r.incomeId ? String(r.incomeId) : `${r.nmId}-${r.date}`,
+        warehouse: r.warehouseName || null,
+        raw: r
+      }));
+      const { error } = await supabase.from('wb_purchases').upsert(mapped as any, { onConflict: 'user_id,income_id' as any });
+      if (error) throw error;
+      toast.success(`Импортировано поставок: ${mapped.length}`);
+    } catch (err: any) {
+      toast.error(`Ошибка импорта поставок: ${err.message || err}`);
+    }
+  };
+
+  const importWBStocksJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('Не авторизован'); return; }
+      const mapped = (data || []).map((r: any) => {
+        const isoDate = `${(r.lastChangeDate?.split('T')[0] || r.date)}T00:00:00Z`;
+        const barcode = (r.barcode !== undefined && r.barcode !== null && String(r.barcode).trim() !== '')
+          ? String(r.barcode)
+          : String(r.nmId || r.nmid || 'NO_BARCODE');
+        return {
+          user_id: user.id,
+          date: isoDate,
+          sku: String(r.nmId),
+          barcode,
+          tech_size: r.techSize !== undefined && r.techSize !== null ? String(r.techSize) : null,
+          quantity: Number(r.quantity || 0),
+          in_way_to_client: Number(r.inWayToClient || 0),
+          in_way_from_client: Number(r.inWayFromClient || 0),
+          warehouse: r.warehouseName || null,
+          price: r.Price !== undefined ? Number(r.Price) : null,
+          discount: r.Discount !== undefined ? Number(r.Discount) : null,
+          raw: r
+        };
+      });
+      const { error } = await supabase.from('wb_stocks').upsert(mapped as any, { onConflict: 'user_id,sku,barcode,date' as any });
+      if (error) throw error;
+      // Обновляем currentStock
+      const totals = new Map<string, number>();
+      mapped.forEach((m: any) => totals.set(m.sku, (totals.get(m.sku) || 0) + (m.quantity || 0)));
+      setProducts(prev => prev.map(p => ({ ...p, currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0) })));
+      toast.success(`Импортировано остатков: ${mapped.length}`);
+    } catch (err: any) {
+      toast.error(`Ошибка импорта остатков: ${err.message || err}`);
+    }
   };
 
   const exportToJSON = () => {
@@ -182,7 +280,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
           optValue: 0,
           safety: 0,
           currentStock: p.currentStock || 0,
-          seasonality: p.seasonality || { enabled: false, monthlyFactors: [1,1,1,1,1,1,1,1,1,1,1,1], currentMonth: 0 },
+          seasonality: p.seasonality || { enabled: false, monthlyFactors: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], currentMonth: 0 },
           shelfLife: p.shelfLife,
           minOrderQty: p.minOrderQty,
           maxStorageQty: p.maxStorageQty,
@@ -295,6 +393,23 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
             <h4 className="font-semibold mb-3 text-purple-800">🔑 Ключ Wildberries API</h4>
             <p className="text-xs text-purple-700 mb-2">Ключ хранится в вашей записи Supabase и используется для импорта.</p>
             <WbKeyManager />
+            <div className="mt-4 p-3 bg-white rounded border">
+              <h5 className="font-medium mb-2">Импорт из локальных JSON (WB)</h5>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                <div>
+                  <input type="file" accept=".json" onChange={importWBSalesJSON} className="hidden" id="wb-sales-json" />
+                  <label htmlFor="wb-sales-json" className="block w-full text-center px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 cursor-pointer">📈 Продажи JSON</label>
+                </div>
+                <div>
+                  <input type="file" accept=".json" onChange={importWBPurchasesJSON} className="hidden" id="wb-purchases-json" />
+                  <label htmlFor="wb-purchases-json" className="block w-full text-center px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer">📦 Поставки JSON</label>
+                </div>
+                <div>
+                  <input type="file" accept=".json" onChange={importWBStocksJSON} className="hidden" id="wb-stocks-json" />
+                  <label htmlFor="wb-stocks-json" className="block w-full text-center px-3 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 cursor-pointer">📊 Остатки JSON</label>
+                </div>
+              </div>
+            </div>
           </div>
           <div className="p-4 bg-purple-50 border border-purple-200 rounded">
             <h4 className="font-semibold mb-3 text-purple-800">📡 Импорт из Wildberries API</h4>

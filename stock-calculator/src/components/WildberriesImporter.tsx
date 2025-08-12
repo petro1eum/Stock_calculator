@@ -7,6 +7,8 @@ interface WildberriesImporterProps {
   onUpdateProducts?: React.Dispatch<React.SetStateAction<Product[]>>;
 }
 
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
+
 const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProducts }) => {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -16,12 +18,75 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     date.setDate(date.getDate() - 30); // 30 дней назад
     return date.toISOString().split('T')[0];
   });
+  const [rateInfo, setRateInfo] = React.useState<{ remaining?: number; limit?: number } | null>(null);
 
   const getWbKey = async (): Promise<string | null> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     const { data } = await supabase.from('user_secrets').select('wb_api_key').eq('user_id', user.id).maybeSingle();
     return (data?.wb_api_key as string) || null;
+  };
+
+  const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+  const makeCacheKey = (url: string) => `wb_cache:${url}`;
+  const readCache = (url: string) => {
+    try {
+      const raw = localStorage.getItem(makeCacheKey(url));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (Date.now() - (parsed.ts || 0) > CACHE_TTL_MS) return null;
+      return parsed.data;
+    } catch { return null; }
+  };
+  const writeCache = (url: string, data: unknown) => {
+    try { localStorage.setItem(makeCacheKey(url), JSON.stringify({ ts: Date.now(), data })); } catch {}
+  };
+
+  const fetchWithRetry = async (url: string, key: string, useCache = true, maxRetries = 6) => {
+    if (useCache) {
+      const cached = readCache(url);
+      if (cached) return cached;
+    }
+    let attempt = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const resp = await fetch(url, { headers: { Authorization: key } });
+      const remainingHeader = resp.headers.get('x-ratelimit-remaining');
+      const limitHeader = resp.headers.get('x-ratelimit-limit');
+      const remaining = remainingHeader ? parseInt(remainingHeader, 10) : undefined;
+      const limit = limitHeader ? parseInt(limitHeader, 10) : undefined;
+      if (remaining !== undefined || limit !== undefined) setRateInfo({ remaining, limit });
+
+      if (resp.status === 429) {
+        if (attempt >= maxRetries) {
+          const txt = await resp.text();
+          throw new Error(`WB API 429 (лимит запросов). Попробуйте позже. Подробности: ${txt.slice(0, 200)}`);
+        }
+        const delay = Math.min(32000, 1000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 400);
+        attempt += 1;
+        await sleep(delay);
+        continue;
+      }
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`WB API: ${resp.status} ${resp.statusText} ${txt.slice(0, 200)}`);
+      }
+      const ct = resp.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        const txt = await resp.text();
+        throw new Error(`WB API вернул не-JSON ответ: ${txt.slice(0, 120)}`);
+      }
+      const json = await resp.json();
+      writeCache(url, json);
+
+      // Если почти на нуле — мягкая задержка, чтобы распределить нагрузку
+      if (remaining !== undefined && remaining <= 1) {
+        await sleep(1000 + Math.floor(Math.random() * 300));
+      }
+      return json;
+    }
   };
 
   const safeSaveToDb = async (type: 'sales' | 'purchases' | 'stocks', records: any[]) => {
@@ -78,20 +143,26 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
           await supabase.from('wb_purchases').upsert(rows as any, { onConflict: 'user_id,income_id' as any });
         }
         if (type === 'stocks') {
-          const rows = records.map((r: any) => ({
-            user_id: user.id,
-            date: r.date,
-            sku: String(r.nmId),
-            barcode: r.barcode || null,
-            tech_size: r.techSize || null,
-            quantity: Number(r.quantity || 0),
-            in_way_to_client: Number(r.inWayToClient || 0),
-            in_way_from_client: Number(r.inWayFromClient || 0),
-            warehouse: r.warehouse || r.warehouseName || null,
-            price: r.price !== undefined ? Number(r.price) : null,
-            discount: r.discount !== undefined ? Number(r.discount) : null,
-            raw: r
-          }));
+          const rows = records.map((r: any) => {
+            const isoDate = r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date;
+            const barcode = (r.barcode !== undefined && r.barcode !== null && String(r.barcode).trim() !== '')
+              ? String(r.barcode)
+              : String(r.nmId || r.nmid || 'NO_BARCODE');
+            return {
+              user_id: user.id,
+              date: isoDate,
+              sku: String(r.nmId),
+              barcode,
+              tech_size: r.techSize !== undefined && r.techSize !== null ? String(r.techSize) : null,
+              quantity: Number(r.quantity || 0),
+              in_way_to_client: Number(r.inWayToClient || 0),
+              in_way_from_client: Number(r.inWayFromClient || 0),
+              warehouse: r.warehouse || r.warehouseName || null,
+              price: r.price !== undefined ? Number(r.price) : (r.Price !== undefined ? Number(r.Price) : null),
+              discount: r.discount !== undefined ? Number(r.discount) : (r.Discount !== undefined ? Number(r.Discount) : null),
+              raw: r
+            };
+          });
           await supabase.from('wb_stocks').upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any });
         }
       }
@@ -105,15 +176,9 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     try {
       const key = await getWbKey();
       if (!key) throw new Error('Сначала сохраните ключ WB в настройках пользователя');
-      const response = await fetch(`https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`, {
-        headers: { Authorization: key }
-      });
-      if (!response.ok) {
-        const txt = await response.text();
-        throw new Error(`WB API: ${response.status} ${response.statusText} ${txt.slice(0, 200)}`);
-      }
-      const data = await response.json();
-      const mapped = (data || []).map((sale: any) => ({
+      const url = `https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${dateFrom}`;
+      const data = await fetchWithRetry(url, key, true);
+      const mapped: Array<{ date: string; nmId: number; subject?: string; brand?: string; quantity: number; totalPrice?: number; saleID?: string; warehouseName?: string }> = (data || []).map((sale: any) => ({
         date: sale.date?.split('T')[0] || sale.date,
         nmId: sale.nmId,
         subject: sale.subject,
@@ -132,7 +197,32 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
           units: Number(s.quantity || 1),
           revenue: Number(s.totalPrice || 0)
         }));
-        onUpdateProducts(prev => updateProductsFromSales(prev, salesRecords, { weeksWindow: 26 }));
+        onUpdateProducts(prev => {
+          // автосоздание карточек для отсутствующих SKU
+          const existing = new Set(prev.map(p => p.sku));
+          const missing = Array.from(new Set(mapped.map((s: any) => String(s.nmId)))).filter(sku => !existing.has(sku));
+          const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
+          const newItems = missing.map((sku, idx) => ({
+            id: prev.length + idx + 1,
+            name: (() => { const subj = mapped.find((m: any) => String(m.nmId) === sku)?.subject; return typeof subj === 'string' ? subj : 'Товар WB'; })(),
+            sku,
+            purchase: 0,
+            margin: 0,
+            muWeek: 0,
+            sigmaWeek: 0,
+            revenue: 0,
+            optQ: 0,
+            optValue: 0,
+            safety: 0,
+            currentStock: 0,
+            seasonality: baseSeasonality,
+            currency: 'RUB',
+            supplier: 'domestic',
+            category: ''
+          }));
+          const combined = [...prev, ...newItems];
+          return updateProductsFromSales(combined, salesRecords, { weeksWindow: 26 });
+        });
       }
       await safeSaveToDb('sales', mapped || []);
     } catch (err: any) {
@@ -145,14 +235,8 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     try {
       const key = await getWbKey();
       if (!key) throw new Error('Сначала сохраните ключ WB в настройках пользователя');
-      const response = await fetch(`https://statistics-api.wildberries.ru/api/v1/supplier/incomes?dateFrom=${dateFrom}`, {
-        headers: { Authorization: key }
-      });
-      if (!response.ok) {
-        const txt = await response.text();
-        throw new Error(`WB API: ${response.status} ${response.statusText} ${txt.slice(0, 200)}`);
-      }
-      const data = await response.json();
+      const url = `https://statistics-api.wildberries.ru/api/v1/supplier/incomes?dateFrom=${dateFrom}`;
+      const data = await fetchWithRetry(url, key, true);
       const mapped = (data || []).map((income: any) => ({
         date: income.date?.split('T')[0] || income.date,
         nmId: income.nmId,
@@ -175,14 +259,8 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     try {
       const key = await getWbKey();
       if (!key) throw new Error('Сначала сохраните ключ WB в настройках пользователя');
-      const response = await fetch(`https://statistics-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${dateFrom}`, {
-        headers: { Authorization: key }
-      });
-      if (!response.ok) {
-        const txt = await response.text();
-        throw new Error(`WB API: ${response.status} ${response.statusText} ${txt.slice(0, 200)}`);
-      }
-      const data = await response.json();
+      const url = `https://statistics-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${dateFrom}`;
+      const data = await fetchWithRetry(url, key, true);
       const mapped = (data || []).map((stock: any) => ({
         date: stock.lastChangeDate?.split('T')[0] || stock.date,
         nmId: stock.nmId,
@@ -199,8 +277,60 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       }));
       const res = { type: 'stocks', count: mapped.length, data: mapped };
       setResult(res);
+      // обновляем остатки и создаём карточки для новых SKU
+      if (onUpdateProducts && mapped.length > 0) {
+        onUpdateProducts(prev => {
+          const existing = new Set(prev.map(p => p.sku));
+          const totals = new Map<string, number>();
+          mapped.forEach((m: any) => {
+            const sku = String(m.nmId);
+            totals.set(sku, (totals.get(sku) || 0) + (m.quantity || 0));
+          });
+          const missing = Array.from(totals.keys()).filter(sku => !existing.has(sku));
+          const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
+          const newItems = missing.map((sku, idx) => ({
+            id: prev.length + idx + 1,
+            name: (() => { const subj = mapped.find((m: any) => String(m.nmId) === sku)?.subject; return typeof subj === 'string' ? subj : 'Товар WB'; })(),
+            sku,
+            purchase: 0,
+            margin: 0,
+            muWeek: 0,
+            sigmaWeek: 0,
+            revenue: 0,
+            optQ: 0,
+            optValue: 0,
+            safety: 0,
+            currentStock: totals.get(sku) || 0,
+            seasonality: baseSeasonality,
+            currency: 'RUB',
+            supplier: 'domestic',
+            category: ''
+          }));
+          const combined = [...prev, ...newItems].map(p => ({
+            ...p,
+            currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : p.currentStock
+          }));
+          return combined;
+        });
+      }
       await safeSaveToDb('stocks', mapped || []);
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
+  };
+
+  const pingLimits = async () => {
+    setError(null);
+    try {
+      const key = await getWbKey();
+      if (!key) throw new Error('Сначала сохраните ключ WB в настройках пользователя');
+      const resp = await fetch('https://marketplace-api.wildberries.ru/ping', { headers: { Authorization: key } });
+      const remainingHeader = resp.headers.get('x-ratelimit-remaining');
+      const limitHeader = resp.headers.get('x-ratelimit-limit');
+      const remaining = remainingHeader ? parseInt(remainingHeader, 10) : undefined;
+      const limit = limitHeader ? parseInt(limitHeader, 10) : undefined;
+      setRateInfo({ remaining, limit });
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
 
   const downloadData = () => {
@@ -224,6 +354,10 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
         <label className="text-sm font-medium text-gray-700">Период с:</label>
         <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border rounded px-3 py-1 text-sm" />
         <span className="text-xs text-gray-500">до сегодня</span>
+        <button onClick={pingLimits} className="ml-auto px-2 py-1 text-xs bg-gray-100 rounded border">/ping</button>
+        {rateInfo && (
+          <span className="text-xs text-gray-600">Rate: {rateInfo.remaining ?? '—'}/{rateInfo.limit ?? '—'}</span>
+        )}
       </div>
 
       {/* Кнопки импорта */}
