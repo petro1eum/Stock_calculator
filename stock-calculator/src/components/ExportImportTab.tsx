@@ -206,7 +206,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         quantity: Number(r.quantity || 0),
         total_price: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
         income_id: r.incomeId ? String(r.incomeId) : `${r.nmId}-${r.date}`,
-        warehouse: r.warehouseName || null,
+        warehouse: r.warehouse || r.warehouseName || null,
         raw: r
       }));
       const { error } = await supabase.from('wb_purchases').upsert(mapped as any, { onConflict: 'user_id,income_id' as any });
