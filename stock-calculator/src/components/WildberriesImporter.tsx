@@ -28,6 +28,33 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
   };
 
   const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+  const toIsoDateOrNull = (value: unknown): string | null => {
+    if (!value) return null;
+    try {
+      if (typeof value === 'string') {
+        // ожидаем либо YYYY-MM-DD, либо полноценный ISO
+        const onlyDate = value.split('T')[0];
+        if (/^\d{4}-\d{2}-\d{2}$/.test(onlyDate)) {
+          return `${onlyDate}T00:00:00Z`;
+        }
+        const d = new Date(value);
+        if (!isNaN(d.getTime())) return `${d.toISOString().split('T')[0]}T00:00:00Z`;
+        return null;
+      }
+      if (value instanceof Date && !isNaN(value.getTime())) {
+        return `${value.toISOString().split('T')[0]}T00:00:00Z`;
+      }
+      return null;
+    } catch { return null; }
+  };
+  const toInt = (v: any, def = 0): number => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.trunc(n) : def;
+  };
+  const toNumOrNull = (v: any): number | null => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
 
   const makeCacheKey = (url: string) => `wb_cache:${url}`;
   const readCache = (url: string) => {
@@ -125,27 +152,36 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       }
 
       if (type === 'stocks') {
-        const rows = records.map((r: any) => {
-          const isoDate = r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date;
-          const barcode = (r.barcode !== undefined && r.barcode !== null && String(r.barcode).trim() !== '')
-            ? String(r.barcode)
-            : String(r.nmId || r.nmid || 'NO_BARCODE');
-          return {
-            user_id: user.id,
-            date: isoDate,
-            sku: String(r.nmId),
-            barcode,
-            tech_size: r.techSize !== undefined && r.techSize !== null ? String(r.techSize) : null,
-            quantity: Number(r.quantity || 0),
-            in_way_to_client: Number(r.inWayToClient || 0),
-            in_way_from_client: Number(r.inWayFromClient || 0),
-            warehouse: r.warehouse || r.warehouseName || null,
-            price: r.price !== undefined ? Number(r.price) : (r.Price !== undefined ? Number(r.Price) : null),
-            discount: r.discount !== undefined ? Number(r.discount) : (r.Discount !== undefined ? Number(r.Discount) : null),
-            raw: r
-          };
-        });
-        await supabase.from('wb_stocks').upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any });
+        const rows = (records as any[])
+          .map((r: any) => {
+            const isoDate = toIsoDateOrNull(r.date) || toIsoDateOrNull(r.lastChangeDate) || toIsoDateOrNull(new Date());
+            const sku = r.nmId ?? r.nmid ?? r.sku;
+            const barcode = (r.barcode !== undefined && r.barcode !== null && String(r.barcode).trim() !== '')
+              ? String(r.barcode)
+              : String(sku ?? 'NO_BARCODE');
+            return {
+              user_id: user.id,
+              date: isoDate,
+              sku: sku != null ? String(sku) : null,
+              barcode,
+              tech_size: r.techSize !== undefined && r.techSize !== null ? String(r.techSize) : null,
+              quantity: toInt(r.quantity, 0),
+              in_way_to_client: toInt(r.inWayToClient, 0),
+              in_way_from_client: toInt(r.inWayFromClient, 0),
+              warehouse: r.warehouse || r.warehouseName || null,
+              price: r.price !== undefined ? toNumOrNull(r.price) : (r.Price !== undefined ? toNumOrNull(r.Price) : null),
+              discount: r.discount !== undefined ? toNumOrNull(r.discount) : (r.Discount !== undefined ? toNumOrNull(r.Discount) : null),
+              raw: r
+            } as const;
+          })
+          // фильтруем потенциально проблемные строки (без даты или SKU)
+          .filter((row: any) => Boolean(row.date && row.sku));
+
+        if (rows.length === 0) return;
+
+        await supabase
+          .from('wb_stocks')
+          .upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any });
         return;
       }
     } catch {}
