@@ -662,6 +662,38 @@ const InventoryOptionCalculator = () => {
               return s ? { ...p, sales12m: s.units, revenue12m: s.revenue } : p;
             });
           } catch {}
+          // анализ поставок — цикл пополнения и ROP
+          try {
+            const { data: purchases } = await supabase
+              .from('wb_purchases')
+              .select('sku, date, quantity')
+              .eq('user_id', user.id)
+              .order('date', { ascending: true })
+              .limit(50000);
+            const bySku = new Map<string, Array<Date>>();
+            (purchases || []).forEach((r: any) => {
+              const sku = String(r.sku);
+              const d = new Date(r.date);
+              if (!bySku.has(sku)) bySku.set(sku, []);
+              bySku.get(sku)!.push(d);
+            });
+            const replenishment = new Map<string, number>();
+            bySku.forEach((dates, sku) => {
+              if (dates.length < 2) return;
+              let sum = 0; let cnt = 0;
+              for (let i=1;i<dates.length;i++){ sum += (dates[i].getTime()-dates[i-1].getTime()); cnt++; }
+              const avgMs = sum / cnt;
+              const weeks = Math.max(1, Math.round(avgMs / (7*24*3600*1000)));
+              replenishment.set(sku, weeks);
+            });
+            // ROP = demand_per_week * lead_time_weeks + safety
+            initialProducts = initialProducts.map(p => {
+              const lt = replenishment.get(p.sku) ?? 0;
+              const rop = Math.round((p.muWeek || 0) * lt + (p.safety || 0));
+              return lt>0 ? { ...p, procurementCycleWeeks: lt, reorderPoint: rop } : p;
+            });
+          } catch {}
+
           setProducts(initialProducts);
         }
       } catch {}

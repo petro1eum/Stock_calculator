@@ -221,6 +221,13 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
               </div>
             )}
           </div>
+          <div className="bg-orange-50 p-3 rounded border-l-4 border-orange-500">
+            <div className="text-sm text-gray-600">Цикл пополнения</div>
+            <div className="text-lg font-bold text-orange-600">{product.procurementCycleWeeks ? `${product.procurementCycleWeeks} нед` : '—'}</div>
+            {typeof product.reorderPoint === 'number' && (
+              <div className="text-xs text-gray-600 mt-1">Точка заказа (ROP): {fmt(product.reorderPoint)} шт</div>
+            )}
+          </div>
         </div>
       </div>
 

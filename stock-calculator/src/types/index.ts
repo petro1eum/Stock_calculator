@@ -50,6 +50,9 @@ export interface Product {
   revenue30d?: number; // выручка за 30 дней (по розничной цене)
   sales12m?: number; // шт за 12 месяцев
   revenue12m?: number; // выручка за 12 месяцев
+  // Поставки / логистика
+  procurementCycleWeeks?: number; // средний цикл пополнения (по интервалам поставок)
+  reorderPoint?: number; // точка заказа (ROP)
   // История продаж/закупок/логистики (опционально)
   salesHistory?: SalesRecord[];
   purchaseHistory?: PurchaseRecord[];
