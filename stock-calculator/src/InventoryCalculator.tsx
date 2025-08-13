@@ -507,9 +507,9 @@ const InventoryOptionCalculator = () => {
           const qty = Number(r.quantity || 0);
           const ts = new Date(r.date).getTime() || 0;
           const subj = typeof r.raw?.subject === 'string' ? r.raw.subject : undefined;
+          // Название берем строго из vendorCode / supplierArticle. Никаких raw.name
           const name = typeof r.raw?.vendorCode === 'string' ? r.raw.vendorCode
-                       : (typeof r.raw?.supplierArticle === 'string' ? r.raw.supplierArticle
-                       : (typeof r.raw?.name === 'string' ? r.raw.name : undefined));
+                       : (typeof r.raw?.supplierArticle === 'string' ? r.raw.supplierArticle : undefined);
           if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
           if (name && !nameBySku.has(sku)) nameBySku.set(sku, name);
           const wh = r.warehouse || r.raw?.warehouseName || 'Склад WB';
@@ -564,6 +564,7 @@ const InventoryOptionCalculator = () => {
           const byNm = new Map<string, { price?: number; discounted?: number; discount?: number; vendor?: string }>();
           (prices || []).forEach((p: any) => {
             const sku = String(p.nm_id);
+            // Название строго vendorCode -> supplierArticle
             const vendor = typeof p.raw?.vendorCode === 'string' ? p.raw.vendorCode : (typeof p.raw?.supplierArticle === 'string' ? p.raw.supplierArticle : undefined);
             const cur = byNm.get(sku) || {};
             cur.price = p.price ?? cur.price;
@@ -583,6 +584,7 @@ const InventoryOptionCalculator = () => {
             .limit(50000);
           (an || []).forEach((a: any) => {
             const sku = String(a.nm_id);
+            // Название строго vendorCode -> supplierArticle
             const vendor = typeof a.raw?.vendorCode === 'string' ? a.raw.vendorCode : (typeof a.raw?.supplierArticle === 'string' ? a.raw.supplierArticle : undefined);
             const cat = typeof a.raw?.object?.name === 'string' ? a.raw.object.name : undefined;
             if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
@@ -606,6 +608,7 @@ const InventoryOptionCalculator = () => {
           // добираем названия
           (sales || []).forEach((r: any) => {
             const sku = String(r.sku);
+            // Название строго supplierArticle (если есть)
             const vendor = typeof r.raw?.supplierArticle === 'string' ? r.raw.supplierArticle : undefined;
             const subj = typeof r.raw?.subject === 'string' ? r.raw.subject : undefined;
             if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
@@ -618,7 +621,8 @@ const InventoryOptionCalculator = () => {
         if (initialProducts.length > 0) {
           // цены
           // Всегда применяем имя: vendorCode -> supplierArticle -> name -> sku
-          initialProducts = initialProducts.map(p => ({ ...p, name: nameBySku.get(p.sku) || p.name || p.sku }));
+          // Принцип: если имя уже установлено — не трогаем. Иначе присваиваем vendorCode/supplierArticle; если нет — оставляем sku как fallback.
+          initialProducts = initialProducts.map(p => ({ ...p, name: p.name && p.name !== p.sku ? p.name : (nameBySku.get(p.sku) || p.sku) }));
           // Категория из subject/object.name
           initialProducts = initialProducts.map(p => ({ ...p, category: subjBySku.get(p.sku) || p.category || '' }));
           // Цены (если есть)

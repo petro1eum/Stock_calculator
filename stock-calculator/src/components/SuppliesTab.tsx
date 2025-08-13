@@ -31,6 +31,8 @@ const SuppliesTab: React.FC = () => {
   const [purchasesBySku, setPurchasesBySku] = React.useState<Map<string, { date: string; quantity: number; warehouse?: string | null }[]>>(new Map());
   const [nameBySku, setNameBySku] = React.useState<Map<string, string>>(new Map());
   const [costsByKey, setCostsByKey] = React.useState<Map<string, { purchase_amount?: number|null; purchase_currency?: string|null; logistics_amount?: number|null; logistics_currency?: string|null; fx_rate?: number|null }>>(new Map());
+  const [riskView, setRiskView] = React.useState<'calendar' | 'list'>('calendar');
+  const [selectedRiskDay, setSelectedRiskDay] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true); setError(null);
@@ -251,6 +253,27 @@ const SuppliesTab: React.FC = () => {
     Object.entries(suppliesByDay).forEach(([day, rows]) => { res[day] = rows.length; });
     return res;
   }, [suppliesByDay]);
+
+  // Индексация событий рисков по дням для календаря
+  const risksByDay = React.useMemo(() => {
+    const map: Record<string, LogisticsEvent[]> = {};
+    (logisticsEvents || []).forEach(ev => {
+      const start = new Date(ev.start_date);
+      const end = new Date(ev.end_date);
+      // ограничим в пределах выбранного года
+      const from = new Date(year, 0, 1);
+      const to = new Date(year + 1, 0, 1);
+      let cur = new Date(Math.max(start.getTime(), from.getTime()));
+      const last = new Date(Math.min(end.getTime(), to.getTime() - 24*3600*1000));
+      while (cur <= last) {
+        const key = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+        if (!map[key]) map[key] = [];
+        map[key].push(ev);
+        cur.setDate(cur.getDate()+1);
+      }
+    });
+    return map;
+  }, [logisticsEvents, year]);
 
   const savePurchaseOrder = async (orderData: Partial<PurchaseOrder>, items: Partial<PurchaseOrderItem>[]) => {
     try {
@@ -662,8 +685,15 @@ const SuppliesTab: React.FC = () => {
       {/* Календарь рисков */}
       {mode === 'risks' && (
         <div className="space-y-4">
-          <div className="flex justify-between">
-            <h3 className="text-lg font-semibold">Календарь логистических рисков</h3>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h3 className="text-lg font-semibold">Календарь логистических рисков</h3>
+              <div className="text-sm">Вид:</div>
+              <div className="flex border rounded overflow-hidden text-sm">
+                <button className={`px-3 py-1 ${riskView==='calendar'?'bg-gray-200':''}`} onClick={()=>setRiskView('calendar')}>Календарь</button>
+                <button className={`px-3 py-1 ${riskView==='list'?'bg-gray-200':''}`} onClick={()=>setRiskView('list')}>Список</button>
+              </div>
+            </div>
             <div className="flex gap-2">
               <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700" onClick={() => { setEditingRisk(null); setShowRiskForm(true); }}>
                 Добавить событие
@@ -731,37 +761,95 @@ const SuppliesTab: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid gap-4">
-            {logisticsEvents.map(event => (
-              <div key={event.id} className="border rounded p-4 bg-white">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-semibold">{event.kind}</h4>
-                    <p className="text-sm text-gray-600">
-                      {event.country && `${event.country}${event.region ? ` (${event.region})` : ''}`}
-                    </p>
-                    <p className="text-sm">
-                      {new Date(event.start_date).toLocaleDateString('ru-RU')} - {new Date(event.end_date).toLocaleDateString('ru-RU')}
-                    </p>
-                    <p className="text-sm text-orange-600">Задержка: {event.delay_days} дней</p>
-                    {event.note && <p className="text-sm text-gray-700 mt-1">{event.note}</p>}
+          {riskView === 'calendar' ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {months.map((m, idx) => (
+                  <div key={idx} className="border rounded p-2 bg-white">
+                    <div className="text-sm font-semibold mb-2 capitalize">{m.name}</div>
+                    <div className="grid grid-cols-7 gap-1 text-xs">
+                      {m.days.map(day => {
+                        const has = (risksByDay[day] || []).length > 0;
+                        return (
+                          <button
+                            key={day}
+                            onClick={() => setSelectedRiskDay(day)}
+                            className={`h-8 border rounded ${has ? 'bg-yellow-100 border-yellow-400' : 'bg-gray-50'}`}
+                            title={has ? `${(risksByDay[day]||[]).length} рисков` : ''}
+                          >
+                            {parseInt(day.slice(-2))}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button className="text-sm px-2 py-1 border rounded hover:bg-gray-50" onClick={() => { setEditingRisk(event); setShowRiskForm(true); }}>Изменить</button>
-                    <button className="text-sm px-2 py-1 border rounded text-red-600 hover:bg-red-50" onClick={async () => {
-                      if (!window.confirm('Удалить событие?')) return;
-                      const { data: { user } } = await supabase.auth.getUser();
-                      if (!user) { toast.error('Не авторизован'); return; }
-                      const { error } = await supabase.from('logistics_calendar').delete().eq('id', event.id).eq('user_id', user.id);
-                      if (error) { toast.error(error.message); return; }
-                      toast.success('Событие удалено');
-                      await loadLogisticsEvents();
-                    }}>Удалить</button>
+                ))}
+              </div>
+              {selectedRiskDay && (
+                <div className="bg-white border rounded p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold">{selectedRiskDay}: риски ({(risksByDay[selectedRiskDay]||[]).length})</h3>
+                    <button className="text-sm text-gray-600" onClick={() => setSelectedRiskDay(null)}>Закрыть</button>
+                  </div>
+                  <div className="space-y-2">
+                    {(risksByDay[selectedRiskDay]||[]).map((event, i) => (
+                      <div key={i} className="flex items-center justify-between border rounded p-2">
+                        <div className="text-sm">
+                          <div className="font-medium capitalize">{event.kind}</div>
+                          <div className="text-gray-600">{event.country}{event.region?` (${event.region})`:''}</div>
+                          <div className="text-gray-600">Задержка: {event.delay_days} д</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button className="text-xs px-2 py-1 border rounded hover:bg-gray-50" onClick={() => { setEditingRisk(event); setShowRiskForm(true); }}>Изменить</button>
+                          <button className="text-xs px-2 py-1 border rounded text-red-600 hover:bg-red-50" onClick={async () => {
+                            if (!window.confirm('Удалить событие?')) return;
+                            const { data: { user } } = await supabase.auth.getUser();
+                            if (!user) { toast.error('Не авторизован'); return; }
+                            const { error } = await supabase.from('logistics_calendar').delete().eq('id', event.id).eq('user_id', user.id);
+                            if (error) { toast.error(error.message); return; }
+                            toast.success('Событие удалено');
+                            await loadLogisticsEvents();
+                          }}>Удалить</button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              )}
+            </>
+          ) : (
+            <div className="grid gap-4">
+              {logisticsEvents.map(event => (
+                <div key={event.id} className="border rounded p-4 bg-white">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="font-semibold">{event.kind}</h4>
+                      <p className="text-sm text-gray-600">
+                        {event.country && `${event.country}${event.region ? ` (${event.region})` : ''}`}
+                      </p>
+                      <p className="text-sm">
+                        {new Date(event.start_date).toLocaleDateString('ru-RU')} - {new Date(event.end_date).toLocaleDateString('ru-RU')}
+                      </p>
+                      <p className="text-sm text-orange-600">Задержка: {event.delay_days} дней</p>
+                      {event.note && <p className="text-sm text-gray-700 mt-1">{event.note}</p>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button className="text-sm px-2 py-1 border rounded hover:bg-gray-50" onClick={() => { setEditingRisk(event); setShowRiskForm(true); }}>Изменить</button>
+                      <button className="text-sm px-2 py-1 border rounded text-red-600 hover:bg-red-50" onClick={async () => {
+                        if (!window.confirm('Удалить событие?')) return;
+                        const { data: { user } } = await supabase.auth.getUser();
+                        if (!user) { toast.error('Не авторизован'); return; }
+                        const { error } = await supabase.from('logistics_calendar').delete().eq('id', event.id).eq('user_id', user.id);
+                        if (error) { toast.error(error.message); return; }
+                        toast.success('Событие удалено');
+                        await loadLogisticsEvents();
+                      }}>Удалить</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
