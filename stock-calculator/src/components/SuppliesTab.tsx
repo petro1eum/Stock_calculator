@@ -664,9 +664,71 @@ const SuppliesTab: React.FC = () => {
         <div className="space-y-4">
           <div className="flex justify-between">
             <h3 className="text-lg font-semibold">Календарь логистических рисков</h3>
-            <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700" onClick={() => { setEditingRisk(null); setShowRiskForm(true); }}>
-              Добавить событие
-            </button>
+            <div className="flex gap-2">
+              <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700" onClick={() => { setEditingRisk(null); setShowRiskForm(true); }}>
+                Добавить событие
+              </button>
+              <button
+                className="px-4 py-2 border rounded hover:bg-gray-50"
+                onClick={async () => {
+                  try {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (!user) { toast.error('Не авторизован'); return; }
+                    if (!window.confirm(`Добавить стандартные риски на ${year} год?`)) return;
+
+                    // Шаблоны рисков (приближенные даты)
+                    const y = year;
+                    const mk = (country: string, kind: string, start: string, end: string, delay: number, note?: string, region?: string) => ({
+                      user_id: user.id,
+                      country, region: region || null,
+                      kind,
+                      start_date: `${start}T00:00:00.000Z`,
+                      end_date: `${end}T23:59:59.999Z`,
+                      delay_days: delay,
+                      note: note || null
+                    });
+
+                    const templates = [
+                      // China — праздники
+                      mk('China','holiday',`${y}-02-01`,`${y}-02-10`,4,'Chinese New Year (approx)'),
+                      mk('China','holiday',`${y}-05-01`,`${y}-05-05`,2,'Labor Day'),
+                      mk('China','holiday',`${y}-10-01`,`${y}-10-07`,3,'Golden Week'),
+                      mk('China','weather',`${y}-05-15`,`${y}-06-30`,5,'Monsoon/rainy season (bags dry slow)'),
+                      // Kazakhstan — праздники
+                      mk('Kazakhstan','holiday',`${y}-01-01`,`${y}-01-02`,1,'New Year'),
+                      mk('Kazakhstan','holiday',`${y}-03-21`,`${y}-03-23`,1,'Nauryz'),
+                      mk('Kazakhstan','holiday',`${y}-05-01`,`${y}-05-01`,1,'Labor Day'),
+                      mk('Kazakhstan','holiday',`${y}-05-07`,`${y}-05-07`,1,'Defender of the Fatherland Day'),
+                      mk('Kazakhstan','holiday',`${y}-05-09`,`${y}-05-09`,1,'Victory Day'),
+                      mk('Kazakhstan','holiday',`${y}-08-30`,`${y}-08-30`,1,'Constitution Day'),
+                      mk('Kazakhstan','holiday',`${y}-12-16`,`${y}-12-16`,1,'Independence Day'),
+                      // Russia — праздники
+                      mk('Russia','holiday',`${y}-01-01`,`${y}-01-08`,2,'New Year holidays'),
+                      mk('Russia','holiday',`${y}-02-23`,`${y}-02-23`,1,'Defender Day'),
+                      mk('Russia','holiday',`${y}-03-08`,`${y}-03-08`,1,'Women’s Day'),
+                      mk('Russia','holiday',`${y}-05-01`,`${y}-05-01`,1,'Spring and Labor Day'),
+                      mk('Russia','holiday',`${y}-05-09`,`${y}-05-09`,1,'Victory Day'),
+                      mk('Russia','holiday',`${y}-06-12`,`${y}-06-12`,1,'Russia Day'),
+                      mk('Russia','holiday',`${y}-11-04`,`${y}-11-04`,1,'Unity Day')
+                    ];
+
+                    // Отфильтруем дубликаты по совпадению country/kind/start/end
+                    const existsKey = new Set((logisticsEvents || []).map(e => `${(e.start_date||'').slice(0,10)}|${(e.end_date||'').slice(0,10)}|${e.country}|${e.kind}`));
+                    const toInsert = templates.filter(t => !existsKey.has(`${t.start_date.slice(0,10)}|${t.end_date.slice(0,10)}|${t.country}|${t.kind}`));
+                    if (toInsert.length === 0) { toast.success('Все стандартные события уже добавлены'); return; }
+
+                    const { error } = await supabase.from('logistics_calendar').insert(toInsert);
+                    if (error) throw error;
+                    toast.success(`Добавлено событий: ${toInsert.length}`);
+                    await loadLogisticsEvents();
+                  } catch (e: any) {
+                    toast.error(e.message || 'Ошибка добавления рисков');
+                  }
+                }}
+              >
+                Добавить типовые риски
+              </button>
+            </div>
           </div>
 
           <div className="grid gap-4">
