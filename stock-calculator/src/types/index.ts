@@ -135,4 +135,38 @@ export interface ProductForm {
   supplier?: string;
   category?: string;
   volume?: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  po_number?: string;
+  created_at: string;
+  supplier?: string;
+  country?: string;
+  incoterms?: string;
+  currency?: string;
+  total_cost?: number;
+  logistics_cost?: number;
+  comment?: string;
+  items?: PurchaseOrderItem[];
+}
+
+export interface PurchaseOrderItem {
+  id: number;
+  po_id: string;
+  sku: string;
+  qty: number;
+  unit_cost?: number;
+  warehouse_target?: string;
+}
+
+export interface LogisticsEvent {
+  id: number;
+  country?: string;
+  region?: string;
+  kind: string;
+  start_date: string;
+  end_date: string;
+  delay_days: number;
+  note?: string;
 } 

@@ -37,6 +37,7 @@ import {
   optimizeQuantity
 } from "./utils/inventoryCalculations";
 import { updateProductsFromSales } from "./utils/inventoryCalculations";
+import { calculateAdjustedLeadTime, calculateHistoricalLeadTime, calculateLandedCost } from "./utils/logisticsCalculations";
 import { supabase } from "./utils/supabaseClient";
 
 const InventoryOptionCalculator = () => {
@@ -663,7 +664,7 @@ const InventoryOptionCalculator = () => {
               return s ? { ...p, sales12m: s.units, revenue12m: s.revenue } : p;
             });
           } catch {}
-          // анализ поставок — цикл пополнения и ROP
+          // анализ поставок — цикл пополнения и ROP с учетом рисков
           try {
             const { data: purchases } = await supabase
               .from('wb_purchases')
@@ -671,6 +672,23 @@ const InventoryOptionCalculator = () => {
               .eq('user_id', user.id)
               .order('date', { ascending: true })
               .limit(50000);
+
+            const { data: purchaseOrders } = await supabase
+              .from('wb_purchase_orders')
+              .select(`
+                id, created_at, country, total_cost, logistics_cost,
+                wb_purchase_order_items (
+                  sku, qty, unit_cost, warehouse_target
+                )
+              `)
+              .eq('user_id', user.id);
+
+            const { data: logisticsEvents } = await supabase
+              .from('logistics_calendar')
+              .select('*')
+              .eq('user_id', user.id);
+
+            // Базовый анализ интервалов поставок WB
             const bySku = new Map<string, Array<Date>>();
             (purchases || []).forEach((r: any) => {
               const sku = String(r.sku);
@@ -678,22 +696,63 @@ const InventoryOptionCalculator = () => {
               if (!bySku.has(sku)) bySku.set(sku, []);
               bySku.get(sku)!.push(d);
             });
-            const replenishment = new Map<string, number>();
+
+            const baseReplenishment = new Map<string, number>();
             bySku.forEach((dates, sku) => {
               if (dates.length < 2) return;
               let sum = 0; let cnt = 0;
               for (let i=1;i<dates.length;i++){ sum += (dates[i].getTime()-dates[i-1].getTime()); cnt++; }
               const avgMs = sum / cnt;
               const weeks = Math.max(1, Math.round(avgMs / (7*24*3600*1000)));
-              replenishment.set(sku, weeks);
+              baseReplenishment.set(sku, weeks);
             });
-            // ROP = demand_per_week * lead_time_weeks + safety
+
+            // Обогащение данных с учетом заказов из Китая и рисков
             initialProducts = initialProducts.map(p => {
-              const lt = replenishment.get(p.sku) ?? 0;
-              const rop = Math.round((p.muWeek || 0) * lt + (p.safety || 0));
-              return lt>0 ? { ...p, procurementCycleWeeks: lt, reorderPoint: rop } : p;
+              // Базовый lead time из интервалов WB
+              const baseLt = baseReplenishment.get(p.sku) ?? 0;
+
+              // Исторический lead time из сопоставления заказов Китай → приемки WB
+              const historicalLt = calculateHistoricalLeadTime(
+                purchaseOrders || [],
+                purchases || [],
+                p.sku
+              );
+
+              // Берем лучший из доступных lead time
+              const bestLt = historicalLt > 0 ? historicalLt : baseLt;
+
+              // Корректируем с учетом календаря рисков
+              const adjustedLt = calculateAdjustedLeadTime(
+                bestLt,
+                'China', // предполагаем, что большинство заказов из Китая
+                logisticsEvents || []
+              );
+
+              // Себестоимость с учетом логистики
+              const landedCost = calculateLandedCost(
+                p.sku,
+                purchaseOrders || [],
+                purchases || []
+              );
+
+              // ROP = demand_per_week * adjusted_lead_time_weeks + safety
+              const rop = Math.round((p.muWeek || 0) * adjustedLt + (p.safety || 0));
+
+              const updates: Partial<Product> = {};
+              if (adjustedLt > 0) {
+                updates.procurementCycleWeeks = adjustedLt;
+                updates.reorderPoint = rop;
+              }
+              if (landedCost.landedCost > 0) {
+                updates.purchase = landedCost.landedCost; // обновляем себестоимость
+              }
+
+              return Object.keys(updates).length > 0 ? { ...p, ...updates } : p;
             });
-          } catch {}
+          } catch (error) {
+            console.warn('Ошибка анализа поставок:', error);
+          }
 
           setProducts(initialProducts);
         }

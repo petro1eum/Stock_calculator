@@ -200,7 +200,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
         </div>
 
         {/* Текущий запас и сезонность */}
-        <div className="grid grid-cols-2 md:grid-cols-2 gap-4 mt-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
           <div className="bg-blue-50 p-3 rounded border-l-4 border-blue-500">
             <div className="text-sm text-gray-600">Текущий запас на складе</div>
             <div className="text-lg font-bold text-blue-600">{fmt(product.currentStock || 0)} штук</div>
@@ -223,10 +223,47 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           </div>
           <div className="bg-orange-50 p-3 rounded border-l-4 border-orange-500">
             <div className="text-sm text-gray-600">Цикл пополнения</div>
-            <div className="text-lg font-bold text-orange-600">{product.procurementCycleWeeks ? `${product.procurementCycleWeeks} нед` : '—'}</div>
+            <div className="text-lg font-bold text-orange-600">{product.procurementCycleWeeks ? `${product.procurementCycleWeeks.toFixed(1)} нед` : '—'}</div>
             {typeof product.reorderPoint === 'number' && (
               <div className="text-xs text-gray-600 mt-1">Точка заказа (ROP): {fmt(product.reorderPoint)} шт</div>
             )}
+          </div>
+        </div>
+
+        {/* Разбивка остатков по складам WB */}
+        {product.stockByWarehouse && Object.keys(product.stockByWarehouse).length > 0 && (
+          <div className="mt-4">
+            <h5 className="text-sm font-medium text-gray-600 mb-2">Остатки по складам WB:</h5>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {Object.entries(product.stockByWarehouse).map(([warehouse, qty]) => (
+                <div key={warehouse} className="bg-gray-50 p-2 rounded text-xs">
+                  <div className="font-medium">{warehouse}</div>
+                  <div className="text-gray-600">{fmt(qty)} шт</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Анализ себестоимости (если есть данные из заказов Китая) */}
+        <div className="mt-4 bg-green-50 border border-green-200 rounded p-3">
+          <h5 className="text-sm font-medium text-green-800 mb-2">Анализ себестоимости:</h5>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+            <div>
+              <div className="text-green-600 font-medium">Текущая себестоимость</div>
+              <div className="text-green-800">${fmt(product.purchase)}</div>
+            </div>
+            <div>
+              <div className="text-green-600 font-medium">Маржа за единицу</div>
+              <div className="text-green-800">${fmt(product.margin)}</div>
+            </div>
+            <div>
+              <div className="text-green-600 font-medium">Валюта/Поставщик</div>
+              <div className="text-green-800">{product.currency || 'RUB'} / {product.supplier || 'Domestic'}</div>
+            </div>
+          </div>
+          <div className="text-xs text-green-600 mt-2">
+            ℹ️ Себестоимость может включать фактические расходы из заказов Китая + логистику
           </div>
         </div>
       </div>
