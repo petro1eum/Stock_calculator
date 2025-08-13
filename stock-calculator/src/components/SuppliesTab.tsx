@@ -3,6 +3,7 @@ import { supabase } from '../utils/supabaseClient';
 import { toast } from 'react-hot-toast';
 import { PurchaseOrder, PurchaseOrderItem, LogisticsEvent } from '../types';
 import PurchaseOrderForm from './PurchaseOrderForm';
+import LogisticsEventForm from './LogisticsEventForm';
 
 interface SupplyRecord {
   date: string;
@@ -23,6 +24,9 @@ const SuppliesTab: React.FC = () => {
   const [logisticsEvents, setLogisticsEvents] = React.useState<LogisticsEvent[]>([]);
   const [showOrderForm, setShowOrderForm] = React.useState(false);
   const [editingOrder, setEditingOrder] = React.useState<PurchaseOrder | null>(null);
+  const [showRiskForm, setShowRiskForm] = React.useState(false);
+  const [editingRisk, setEditingRisk] = React.useState<LogisticsEvent | null>(null);
+  const [purchasesBySku, setPurchasesBySku] = React.useState<Map<string, { date: string; quantity: number; warehouse?: string | null }[]>>(new Map());
 
   const load = React.useCallback(async () => {
     setLoading(true); setError(null);
@@ -106,6 +110,52 @@ const SuppliesTab: React.FC = () => {
     void loadPurchaseOrders();
     void loadLogisticsEvents();
   }, [load, loadPurchaseOrders, loadLogisticsEvents]);
+
+  // Загружаем приемки WB за последние 24 месяца для сопоставления с заказами
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const since = new Date();
+        since.setMonth(since.getMonth() - 24);
+        const { data, error } = await supabase
+          .from('wb_purchases')
+          .select('sku, date, quantity, warehouse, raw')
+          .eq('user_id', user.id)
+          .gte('date', since.toISOString())
+          .order('date', { ascending: true })
+          .limit(200000);
+        if (error) throw error;
+        const map = new Map<string, { date: string; quantity: number; warehouse?: string | null }[]>();
+        (data || []).forEach((r: any) => {
+          const sku = String(r.sku);
+          const arr = map.get(sku) || [];
+          arr.push({ date: r.date, quantity: Number(r.quantity || 0), warehouse: r.warehouse || r.raw?.warehouseName || null });
+          map.set(sku, arr);
+        });
+        setPurchasesBySku(map);
+      } catch {}
+    })();
+  }, []);
+
+  // Сопоставление позиций заказа с первой приемкой после даты заказа
+  const matchOrderItems = React.useCallback((order: PurchaseOrder) => {
+    const orderDate = new Date(order.created_at);
+    const rows = (order.items || []).map((it) => {
+      const list = purchasesBySku.get(String(it.sku)) || [];
+      const arrival = list.find(p => new Date(p.date) > orderDate);
+      if (!arrival) return { sku: it.sku, qty: it.qty, arrivalDate: null as string | null, leadDays: null as number | null, leadWeeks: null as number | null, warehouse: null as string | null };
+      const arrivalDate = new Date(arrival.date);
+      const leadMs = arrivalDate.getTime() - orderDate.getTime();
+      const leadDays = Math.ceil(leadMs / (1000 * 60 * 60 * 24));
+      const leadWeeks = +(leadDays / 7).toFixed(1);
+      return { sku: it.sku, qty: it.qty, arrivalDate: arrival.date, leadDays, leadWeeks, warehouse: arrival.warehouse || null };
+    });
+    const valid = rows.filter(r => r.leadDays && r.leadDays > 0) as Array<{ leadDays: number }>;
+    const avgLeadDays = valid.length ? Math.round(valid.reduce((s, r) => s + (r.leadDays || 0), 0) / valid.length) : null;
+    return { rows, avgLeadDays };
+  }, [purchasesBySku]);
 
   // Календарь: 12 месяцев × дни недели
   const months = React.useMemo(() => {
@@ -414,6 +464,43 @@ const SuppliesTab: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Сопоставление с приемками WB */}
+                <div className="mt-4">
+                  <h5 className="font-medium mb-2">Сопоставление с приемками WB:</h5>
+                  {(() => {
+                    const m = matchOrderItems(order);
+                    return (
+                      <>
+                        <div className="text-xs text-gray-600 mb-2">
+                          Средний lead time: {m.avgLeadDays ? `${m.avgLeadDays} дн (~${(m.avgLeadDays/7).toFixed(1)} нед)` : '—'}
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-xs">
+                            <thead>
+                              <tr className="bg-gray-50">
+                                <th className="px-2 py-1 text-left">SKU</th>
+                                <th className="px-2 py-1 text-left">Первая приемка</th>
+                                <th className="px-2 py-1 text-left">Lead time</th>
+                                <th className="px-2 py-1 text-left">Склад</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {m.rows.map((r, i) => (
+                                <tr key={i}>
+                                  <td className="px-2 py-1">{r.sku}</td>
+                                  <td className="px-2 py-1">{r.arrivalDate ? new Date(r.arrivalDate).toLocaleDateString('ru-RU') : '—'}</td>
+                                  <td className="px-2 py-1">{r.leadDays ? `${r.leadDays} дн (~${r.leadWeeks} нед)` : '—'}</td>
+                                  <td className="px-2 py-1">{r.warehouse || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
             ))}
           </div>
@@ -425,7 +512,7 @@ const SuppliesTab: React.FC = () => {
         <div className="space-y-4">
           <div className="flex justify-between">
             <h3 className="text-lg font-semibold">Календарь логистических рисков</h3>
-            <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+            <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700" onClick={() => { setEditingRisk(null); setShowRiskForm(true); }}>
               Добавить событие
             </button>
           </div>
@@ -446,8 +533,16 @@ const SuppliesTab: React.FC = () => {
                     {event.note && <p className="text-sm text-gray-700 mt-1">{event.note}</p>}
                   </div>
                   <div className="flex gap-2">
-                    <button className="text-sm px-2 py-1 border rounded hover:bg-gray-50">Изменить</button>
-                    <button className="text-sm px-2 py-1 border rounded text-red-600 hover:bg-red-50">Удалить</button>
+                    <button className="text-sm px-2 py-1 border rounded hover:bg-gray-50" onClick={() => { setEditingRisk(event); setShowRiskForm(true); }}>Изменить</button>
+                    <button className="text-sm px-2 py-1 border rounded text-red-600 hover:bg-red-50" onClick={async () => {
+                      if (!window.confirm('Удалить событие?')) return;
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) { toast.error('Не авторизован'); return; }
+                      const { error } = await supabase.from('logistics_calendar').delete().eq('id', event.id).eq('user_id', user.id);
+                      if (error) { toast.error(error.message); return; }
+                      toast.success('Событие удалено');
+                      await loadLogisticsEvents();
+                    }}>Удалить</button>
                   </div>
                 </div>
               </div>
@@ -465,6 +560,35 @@ const SuppliesTab: React.FC = () => {
             setShowOrderForm(false);
             setEditingOrder(null);
           }}
+          loading={loading}
+        />
+      )}
+
+      {/* Форма добавления/редактирования события рисков */}
+      {showRiskForm && (
+        <LogisticsEventForm
+          event={editingRisk}
+          onSave={async (payload) => {
+            try {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) throw new Error('Не авторизован');
+              if (editingRisk) {
+                const { error } = await supabase.from('logistics_calendar').update(payload).eq('id', editingRisk.id).eq('user_id', user.id);
+                if (error) throw error;
+                toast.success('Событие обновлено');
+              } else {
+                const { error } = await supabase.from('logistics_calendar').insert({ ...payload, user_id: user.id });
+                if (error) throw error;
+                toast.success('Событие добавлено');
+              }
+              setShowRiskForm(false);
+              setEditingRisk(null);
+              await loadLogisticsEvents();
+            } catch (e: any) {
+              toast.error(e.message);
+            }
+          }}
+          onCancel={() => { setShowRiskForm(false); setEditingRisk(null); }}
           loading={loading}
         />
       )}

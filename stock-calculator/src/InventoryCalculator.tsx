@@ -493,7 +493,8 @@ const InventoryOptionCalculator = () => {
           .from('wb_stocks')
           .select('sku, quantity, warehouse, date, raw')
           .eq('user_id', user.id)
-          .limit(10000);
+          .order('date', { ascending: true })
+          .limit(100000);
         if (stocksErr) return;
 
         const totals = new Map<string, number>();
@@ -550,7 +551,7 @@ const InventoryOptionCalculator = () => {
           seasonality: baseSeasonality,
           currency: 'RUB',
           supplier: 'domestic',
-          category: ''
+          category: subjBySku.get(sku) || ''
         }));
 
         // 2) Обогащение названий/категорий из цен/аналитики WB
@@ -619,8 +620,12 @@ const InventoryOptionCalculator = () => {
           if (priceSnapshot) {
             initialProducts = initialProducts.map(p => {
               const pr = priceSnapshot!.get(p.sku);
-              return pr ? { ...p, name: nameBySku.get(p.sku) || p.name, retailPrice: pr.discounted ?? pr.price, discountPercent: pr.discount } : p;
+              const newName = nameBySku.get(p.sku) || p.name;
+              return pr ? { ...p, name: newName, retailPrice: pr.discounted ?? pr.price, discountPercent: pr.discount } : { ...p, name: newName };
             });
+          } else {
+            // даже без цен применим найденные имена/категории
+            initialProducts = initialProducts.map(p => ({ ...p, name: nameBySku.get(p.sku) || p.name, category: p.category || subjBySku.get(p.sku) || '' }));
           }
           // анализ продаж уже учтен при пересчете, но отдельно посчитаем 30д если есть sales в БД
           try {
