@@ -572,6 +572,7 @@ const InventoryOptionCalculator = () => {
             cur.discount = p.discount ?? cur.discount;
             cur.vendor = cur.vendor || vendor;
             byNm.set(sku, cur);
+            if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
           });
           // применим к initialProducts позже
           priceSnapshot = byNm;

@@ -474,70 +474,12 @@ const SuppliesTab: React.FC = () => {
                   <th className="px-3 py-2 text-left">Закуп</th>
                   <th className="px-3 py-2 text-left">Логистика</th>
                   <th className="px-3 py-2 text-left">FX</th>
+                  <th className="px-3 py-2 text-left">Действия</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {(suppliesByDay[selectedDay]||[]).map((r, i) => (
-                  <tr key={i} className="cursor-pointer hover:bg-gray-50" onClick={async () => {
-                    try {
-                      const { data: { user } } = await supabase.auth.getUser();
-                      if (!user) { toast.error('Не авторизован'); return; }
-                      const key = `${selectedDay}|${r.sku}`;
-                      const existing = costsByKey.get(key);
-                      const purchase_amount = prompt('Закуп (число, напр. 12.5)', existing?.purchase_amount != null ? String(existing.purchase_amount) : '');
-                      const purchase_currency = prompt('Валюта закупа (CNY/USD/RUB)', existing?.purchase_currency || 'CNY');
-                      const logistics_amount = prompt('Логистика (число)', existing?.logistics_amount != null ? String(existing.logistics_amount) : '');
-                      const logistics_currency = prompt('Валюта логистики (CNY/USD/RUB)', existing?.logistics_currency || 'USD');
-                      let fx_rate = prompt('FX к RUB на дату (опционально)', existing?.fx_rate != null ? String(existing.fx_rate) : '');
-                      // Если не указали FX, попробуем подтянуть с ЦБ РФ по указанной валюте закупа
-                      if (!fx_rate && purchase_currency && purchase_currency.toUpperCase() !== 'RUB') {
-                        const autoFx = await fetchCbrRateToRub(purchase_currency, `${selectedDay}T00:00:00.000Z`);
-                        if (autoFx) {
-                          fx_rate = String(Number(autoFx.toFixed(4)));
-                          toast.success(`Курс ЦБ РФ ${purchase_currency}->RUB на дату: ${fx_rate}`);
-                        }
-                      }
-                      const allEmpty = !purchase_amount && !purchase_currency && !logistics_amount && !logistics_currency && !fx_rate;
-                      if (allEmpty) {
-                        if (existing) {
-                          const { error } = await supabase
-                            .from('wb_costs')
-                            .delete()
-                            .eq('user_id', user.id)
-                            .eq('date', `${selectedDay}T00:00:00.000Z`)
-                            .eq('sku', r.sku);
-                          if (error) throw error;
-                          const newMap = new Map(costsByKey);
-                          newMap.delete(key);
-                          setCostsByKey(newMap);
-                          toast.success('Затраты удалены');
-                        }
-                      } else {
-                        const payload: any = {
-                          user_id: user.id,
-                          date: `${selectedDay}T00:00:00.000Z`,
-                          sku: r.sku,
-                          purchase_amount: purchase_amount ? Number(purchase_amount) : null,
-                          purchase_currency: purchase_currency || null,
-                          logistics_amount: logistics_amount ? Number(logistics_amount) : null,
-                          logistics_currency: logistics_currency || null,
-                          fx_rate: fx_rate ? Number(fx_rate) : null
-                        };
-                        const { error } = await supabase
-                          .from('wb_costs')
-                          .upsert(payload, { onConflict: 'user_id,date,sku' })
-                          .select();
-                        if (error) throw error;
-                        const c = { purchase_amount: payload.purchase_amount, purchase_currency: payload.purchase_currency, logistics_amount: payload.logistics_amount, logistics_currency: payload.logistics_currency, fx_rate: payload.fx_rate };
-                        const newMap = new Map(costsByKey);
-                        newMap.set(key, c);
-                        setCostsByKey(newMap);
-                        toast.success('Сохранено');
-                      }
-                    } catch (e: any) {
-                      toast.error(e.message || 'Ошибка');
-                    }
-                  }}>
+                  <tr key={i} className="hover:bg-gray-50">
                     <td className="px-3 py-2">{r.sku}</td>
                     <td className="px-3 py-2">{r.name || '—'}</td>
                     <td className="px-3 py-2">{r.quantity}</td>
@@ -555,6 +497,65 @@ const SuppliesTab: React.FC = () => {
                         </>
                       );
                     })()}
+                    <td className="px-3 py-2">
+                      <div className="flex gap-2">
+                        <button className="text-xs px-2 py-1 border rounded hover:bg-gray-50" onClick={async () => {
+                          try {
+                            const { data: { user } } = await supabase.auth.getUser();
+                            if (!user) { toast.error('Не авторизован'); return; }
+                            const key = `${selectedDay}|${r.sku}`;
+                            const existing = costsByKey.get(key);
+                            const purchase_amount = prompt('Закуп (число, напр. 12.5)', existing?.purchase_amount != null ? String(existing.purchase_amount) : '');
+                            const purchase_currency = prompt('Валюта закупа (CNY/USD/RUB)', existing?.purchase_currency || 'CNY');
+                            const logistics_amount = prompt('Логистика (число)', existing?.logistics_amount != null ? String(existing.logistics_amount) : '');
+                            const logistics_currency = prompt('Валюта логистики (CNY/USD/RUB)', existing?.logistics_currency || 'USD');
+                            let fx_rate = prompt('FX к RUB на дату (опционально)', existing?.fx_rate != null ? String(existing.fx_rate) : '');
+                            if (!fx_rate && purchase_currency && purchase_currency.toUpperCase() !== 'RUB') {
+                              const autoFx = await fetchCbrRateToRub(purchase_currency, `${selectedDay}T00:00:00.000Z`);
+                              if (autoFx) {
+                                fx_rate = String(Number(autoFx.toFixed(4)));
+                                toast.success(`Курс ЦБ РФ ${purchase_currency}->RUB на дату: ${fx_rate}`);
+                              }
+                            }
+                            const payload: any = {
+                              user_id: user.id,
+                              date: `${selectedDay}T00:00:00.000Z`,
+                              sku: r.sku,
+                              purchase_amount: purchase_amount ? Number(purchase_amount) : null,
+                              purchase_currency: purchase_currency || null,
+                              logistics_amount: logistics_amount ? Number(logistics_amount) : null,
+                              logistics_currency: logistics_currency || null,
+                              fx_rate: fx_rate ? Number(fx_rate) : null
+                            };
+                            const { error } = await supabase.from('wb_costs').upsert(payload, { onConflict: 'user_id,date,sku' }).select();
+                            if (error) throw error;
+                            const c = { purchase_amount: payload.purchase_amount, purchase_currency: payload.purchase_currency, logistics_amount: payload.logistics_amount, logistics_currency: payload.logistics_currency, fx_rate: payload.fx_rate };
+                            const newMap = new Map(costsByKey);
+                            newMap.set(key, c);
+                            setCostsByKey(newMap);
+                            toast.success('Сохранено');
+                          } catch (e: any) { toast.error(e.message || 'Ошибка'); }
+                        }}>Изменить</button>
+                        <button className="text-xs px-2 py-1 border rounded text-red-600 hover:bg-red-50" onClick={async () => {
+                          try {
+                            if (!window.confirm('Удалить затраты?')) return;
+                            const { data: { user } } = await supabase.auth.getUser();
+                            if (!user) { toast.error('Не авторизован'); return; }
+                            const { error } = await supabase.from('wb_costs')
+                              .delete()
+                              .eq('user_id', user.id)
+                              .eq('date', `${selectedDay}T00:00:00.000Z`)
+                              .eq('sku', r.sku);
+                            if (error) throw error;
+                            const key = `${selectedDay}|${r.sku}`;
+                            const newMap = new Map(costsByKey);
+                            newMap.delete(key);
+                            setCostsByKey(newMap);
+                            toast.success('Удалено');
+                          } catch (e: any) { toast.error(e.message || 'Ошибка'); }
+                        }}>Удалить</button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -774,9 +775,17 @@ const SuppliesTab: React.FC = () => {
                           <button
                             key={day}
                             onClick={() => setSelectedRiskDay(day)}
-                            className={`h-8 border rounded ${has ? 'bg-yellow-100 border-yellow-400' : 'bg-gray-50'}`}
+                            className={`h-8 border rounded relative overflow-hidden ${has ? 'border-yellow-400' : 'bg-gray-50'}`}
                             title={has ? `${(risksByDay[day]||[]).length} рисков` : ''}
                           >
+                            {has && (
+                              <span
+                                className="absolute inset-0 opacity-20"
+                                style={{
+                                  backgroundImage: 'linear-gradient(180deg, #de2910 0%, #de2910 33%, #ffde00 33%, #ffde00 66%, #de2910 66%, #de2910 100%)'
+                                }}
+                              />
+                            )}
                             {parseInt(day.slice(-2))}
                           </button>
                         );
