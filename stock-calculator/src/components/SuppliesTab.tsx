@@ -21,6 +21,7 @@ const SuppliesTab: React.FC = () => {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [selectedDay, setSelectedDay] = React.useState<string | null>(null);
+  const [receiptsView, setReceiptsView] = React.useState<'calendar' | 'list'>('calendar');
   const [mode, setMode] = React.useState<'calendar' | 'orders' | 'risks'>('calendar');
   const [purchaseOrders, setPurchaseOrders] = React.useState<PurchaseOrder[]>([]);
   const [logisticsEvents, setLogisticsEvents] = React.useState<LogisticsEvent[]>([]);
@@ -431,6 +432,15 @@ const SuppliesTab: React.FC = () => {
 
       {/* Календарь приемок */}
       {mode === 'calendar' && (
+        <>
+        <div className="flex items-center gap-3">
+          <div className="text-sm">Вид:</div>
+          <div className="flex border rounded overflow-hidden text-sm">
+            <button className={`px-3 py-1 ${receiptsView==='calendar'?'bg-gray-200':''}`} onClick={()=>setReceiptsView('calendar')}>Календарь</button>
+            <button className={`px-3 py-1 ${receiptsView==='list'?'bg-gray-200':''}`} onClick={()=>setReceiptsView('list')}>Список</button>
+          </div>
+        </div>
+        {receiptsView==='calendar' ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {months.map((m, idx) => (
           <div key={idx} className="border rounded p-2 bg-white">
@@ -453,6 +463,37 @@ const SuppliesTab: React.FC = () => {
           </div>
         ))}
         </div>
+        ) : (
+          <div className="bg-white border rounded p-3">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="px-3 py-2 text-left">Дата</th>
+                    <th className="px-3 py-2 text-left">SKU</th>
+                    <th className="px-3 py-2 text-left">Наименование</th>
+                    <th className="px-3 py-2 text-left">Кол-во</th>
+                    <th className="px-3 py-2 text-left">Склад</th>
+                    <th className="px-3 py-2 text-left">Сумма</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {Object.entries(suppliesByDay).flatMap(([day, rows]) => rows.map((r,i)=>(
+                    <tr key={`${day}-${i}`}>
+                      <td className="px-3 py-2">{day}</td>
+                      <td className="px-3 py-2">{r.sku}</td>
+                      <td className="px-3 py-2">{r.name || '—'}</td>
+                      <td className="px-3 py-2">{r.quantity}</td>
+                      <td className="px-3 py-2">{r.warehouse || '—'}</td>
+                      <td className="px-3 py-2">{typeof r.total_price === 'number' ? `$${r.total_price}` : '—'}</td>
+                    </tr>
+                  )))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       {/* Панель деталей для выбранного дня (только в режиме календаря) */}
@@ -780,9 +821,17 @@ const SuppliesTab: React.FC = () => {
                           >
                             {has && (
                               <span
-                                className="absolute inset-0 opacity-20"
+                                className="absolute inset-0 opacity-25"
                                 style={{
-                                  backgroundImage: 'linear-gradient(180deg, #de2910 0%, #de2910 33%, #ffde00 33%, #ffde00 66%, #de2910 66%, #de2910 100%)'
+                                  backgroundImage: (() => {
+                                    const ev = (risksByDay[day]||[])[0];
+                                    const country = (ev?.country||'').toLowerCase();
+                                    // Простейшие флаги: Russia (white/blue/red), China (red/yellow), Kazakhstan (cyan/gold)
+                                    if (country.includes('russia')) return 'linear-gradient(180deg, #ffffff 0%, #ffffff 33%, #0039a6 33%, #0039a6 66%, #d52b1e 66%, #d52b1e 100%)';
+                                    if (country.includes('kazakhstan')) return 'linear-gradient(180deg, #00afca 0%, #00afca 70%, #ffd700 70%, #ffd700 100%)';
+                                    // default China
+                                    return 'linear-gradient(180deg, #de2910 0%, #de2910 100%)';
+                                  })()
                                 }}
                               />
                             )}

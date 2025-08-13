@@ -636,9 +636,9 @@ const InventoryOptionCalculator = () => {
 
           // Пересчитаем маржу как (розничная цена - себестоимость), если обе известны
           initialProducts = initialProducts.map(p => {
-            const canCalc = typeof p.retailPrice === 'number' && typeof p.purchase === 'number' && p.retailPrice! > 0 && p.purchase! >= 0;
-            if (!canCalc) return p;
-            const m = Math.max(0, Number(p.retailPrice) - Number(p.purchase));
+            const hasRetail = typeof p.retailPrice === 'number' && p.retailPrice! > 0;
+            const hasPurchase = typeof p.purchase === 'number' && p.purchase! > 0;
+            const m = hasRetail && hasPurchase ? Math.max(0, Number(p.retailPrice) - Number(p.purchase)) : 0;
             return { ...p, margin: m };
           });
           // анализ продаж уже учтен при пересчете, но отдельно посчитаем 30д если есть sales в БД
