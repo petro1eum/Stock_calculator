@@ -4,10 +4,12 @@ import { toast } from 'react-hot-toast';
 import { PurchaseOrder, PurchaseOrderItem, LogisticsEvent } from '../types';
 import PurchaseOrderForm from './PurchaseOrderForm';
 import LogisticsEventForm from './LogisticsEventForm';
+import { fetchCbrRateToRub } from '../utils/fx';
 
 interface SupplyRecord {
   date: string;
   sku: string;
+  name?: string | null;
   quantity: number;
   warehouse?: string | null;
   total_price?: number | null;
@@ -27,6 +29,8 @@ const SuppliesTab: React.FC = () => {
   const [showRiskForm, setShowRiskForm] = React.useState(false);
   const [editingRisk, setEditingRisk] = React.useState<LogisticsEvent | null>(null);
   const [purchasesBySku, setPurchasesBySku] = React.useState<Map<string, { date: string; quantity: number; warehouse?: string | null }[]>>(new Map());
+  const [nameBySku, setNameBySku] = React.useState<Map<string, string>>(new Map());
+  const [costsByKey, setCostsByKey] = React.useState<Map<string, { purchase_amount?: number|null; purchase_currency?: string|null; logistics_amount?: number|null; logistics_currency?: string|null; fx_rate?: number|null }>>(new Map());
 
   const load = React.useCallback(async () => {
     setLoading(true); setError(null);
@@ -48,7 +52,16 @@ const SuppliesTab: React.FC = () => {
       (data || []).forEach((r: any) => {
         const day = (r.date || '').split('T')[0];
         if (!map[day]) map[day] = [];
-        map[day].push({ date: day, sku: String(r.sku), quantity: Number(r.quantity || 0), warehouse: r.warehouse || r.raw?.warehouseName || null, total_price: r.total_price ?? null });
+        const sku = String(r.sku);
+        const raw = r.raw || {};
+        const name = nameBySku.get(sku) || raw.vendorCode || raw.supplierArticle || raw.name || null;
+        let total = r.total_price;
+        if (total == null) {
+          if (typeof raw.totalPrice === 'number') total = raw.totalPrice;
+          else if (typeof raw.forPay === 'number') total = raw.forPay;
+          else if (typeof raw.price === 'number') total = Number(raw.price) * Number(r.quantity || 0);
+        }
+        map[day].push({ date: day, sku, name, quantity: Number(r.quantity || 0), warehouse: r.warehouse || raw.warehouseName || null, total_price: typeof total === 'number' ? total : null });
       });
       setSuppliesByDay(map);
     } catch (e: any) {
@@ -109,7 +122,69 @@ const SuppliesTab: React.FC = () => {
     void load(); 
     void loadPurchaseOrders();
     void loadLogisticsEvents();
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const from = new Date(year, 0, 1).toISOString();
+        const to = new Date(year + 1, 0, 1).toISOString();
+        const { data } = await supabase
+          .from('wb_costs')
+          .select('date, sku, purchase_amount, purchase_currency, logistics_amount, logistics_currency, fx_rate')
+          .eq('user_id', user.id)
+          .gte('date', from)
+          .lt('date', to);
+        const map = new Map<string, any>();
+        (data || []).forEach((r: any) => {
+          const key = `${(r.date||'').split('T')[0]}|${String(r.sku)}`;
+          map.set(key, { purchase_amount: r.purchase_amount, purchase_currency: r.purchase_currency, logistics_amount: r.logistics_amount, logistics_currency: r.logistics_currency, fx_rate: r.fx_rate });
+        });
+        setCostsByKey(map);
+      } catch {}
+    })();
   }, [load, loadPurchaseOrders, loadLogisticsEvents]);
+
+  // Загружаем имена по SKU
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const map = new Map<string, string>();
+        const { data: prices } = await supabase
+          .from('wb_prices')
+          .select('nm_id, raw')
+          .eq('user_id', user.id)
+          .limit(50000);
+        (prices || []).forEach((p: any) => {
+          const sku = String(p.nm_id);
+          const nm = p.raw?.vendorCode || p.raw?.supplierArticle || p.raw?.name;
+          if (nm && !map.has(sku)) map.set(sku, String(nm));
+        });
+        const { data: an } = await supabase
+          .from('wb_analytics')
+          .select('nm_id, raw')
+          .eq('user_id', user.id)
+          .limit(50000);
+        (an || []).forEach((a: any) => {
+          const sku = String(a.nm_id);
+          const nm = a.raw?.vendorCode || a.raw?.supplierArticle || a.raw?.name;
+          if (nm && !map.has(sku)) map.set(sku, String(nm));
+        });
+        const { data: sales } = await supabase
+          .from('wb_sales')
+          .select('sku, raw')
+          .eq('user_id', user.id)
+          .limit(50000);
+        (sales || []).forEach((s: any) => {
+          const sku = String(s.sku);
+          const nm = s.raw?.supplierArticle || s.raw?.vendorCode || s.raw?.name;
+          if (nm && !map.has(sku)) map.set(sku, String(nm));
+        });
+        setNameBySku(map);
+      } catch {}
+    })();
+  }, []);
 
   // Загружаем приемки WB за последние 24 месяца для сопоставления с заказами
   React.useEffect(() => {
@@ -369,23 +444,100 @@ const SuppliesTab: React.FC = () => {
               <thead>
                 <tr className="bg-gray-50">
                   <th className="px-3 py-2 text-left">SKU</th>
+                  <th className="px-3 py-2 text-left">Наименование</th>
                   <th className="px-3 py-2 text-left">Кол-во</th>
                   <th className="px-3 py-2 text-left">Склад</th>
-                  <th className="px-3 py-2 text-left">Сумма</th>
+                  <th className="px-3 py-2 text-left">Сумма (WB)</th>
+                  <th className="px-3 py-2 text-left">Закуп</th>
+                  <th className="px-3 py-2 text-left">Логистика</th>
+                  <th className="px-3 py-2 text-left">FX</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {(suppliesByDay[selectedDay]||[]).map((r, i) => (
-                  <tr key={i}>
+                  <tr key={i} className="cursor-pointer hover:bg-gray-50" onClick={async () => {
+                    try {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) { toast.error('Не авторизован'); return; }
+                      const key = `${selectedDay}|${r.sku}`;
+                      const existing = costsByKey.get(key);
+                      const purchase_amount = prompt('Закуп (число, напр. 12.5)', existing?.purchase_amount != null ? String(existing.purchase_amount) : '');
+                      const purchase_currency = prompt('Валюта закупа (CNY/USD/RUB)', existing?.purchase_currency || 'CNY');
+                      const logistics_amount = prompt('Логистика (число)', existing?.logistics_amount != null ? String(existing.logistics_amount) : '');
+                      const logistics_currency = prompt('Валюта логистики (CNY/USD/RUB)', existing?.logistics_currency || 'USD');
+                      let fx_rate = prompt('FX к RUB на дату (опционально)', existing?.fx_rate != null ? String(existing.fx_rate) : '');
+                      // Если не указали FX, попробуем подтянуть с ЦБ РФ по указанной валюте закупа
+                      if (!fx_rate && purchase_currency && purchase_currency.toUpperCase() !== 'RUB') {
+                        const autoFx = await fetchCbrRateToRub(purchase_currency, `${selectedDay}T00:00:00.000Z`);
+                        if (autoFx) {
+                          fx_rate = String(Number(autoFx.toFixed(4)));
+                          toast.success(`Курс ЦБ РФ ${purchase_currency}->RUB на дату: ${fx_rate}`);
+                        }
+                      }
+                      const allEmpty = !purchase_amount && !purchase_currency && !logistics_amount && !logistics_currency && !fx_rate;
+                      if (allEmpty) {
+                        if (existing) {
+                          const { error } = await supabase
+                            .from('wb_costs')
+                            .delete()
+                            .eq('user_id', user.id)
+                            .eq('date', `${selectedDay}T00:00:00.000Z`)
+                            .eq('sku', r.sku);
+                          if (error) throw error;
+                          const newMap = new Map(costsByKey);
+                          newMap.delete(key);
+                          setCostsByKey(newMap);
+                          toast.success('Затраты удалены');
+                        }
+                      } else {
+                        const payload: any = {
+                          user_id: user.id,
+                          date: `${selectedDay}T00:00:00.000Z`,
+                          sku: r.sku,
+                          purchase_amount: purchase_amount ? Number(purchase_amount) : null,
+                          purchase_currency: purchase_currency || null,
+                          logistics_amount: logistics_amount ? Number(logistics_amount) : null,
+                          logistics_currency: logistics_currency || null,
+                          fx_rate: fx_rate ? Number(fx_rate) : null
+                        };
+                        const { error } = await supabase
+                          .from('wb_costs')
+                          .upsert(payload, { onConflict: 'user_id,date,sku' })
+                          .select();
+                        if (error) throw error;
+                        const c = { purchase_amount: payload.purchase_amount, purchase_currency: payload.purchase_currency, logistics_amount: payload.logistics_amount, logistics_currency: payload.logistics_currency, fx_rate: payload.fx_rate };
+                        const newMap = new Map(costsByKey);
+                        newMap.set(key, c);
+                        setCostsByKey(newMap);
+                        toast.success('Сохранено');
+                      }
+                    } catch (e: any) {
+                      toast.error(e.message || 'Ошибка');
+                    }
+                  }}>
                     <td className="px-3 py-2">{r.sku}</td>
+                    <td className="px-3 py-2">{r.name || '—'}</td>
                     <td className="px-3 py-2">{r.quantity}</td>
                     <td className="px-3 py-2">{r.warehouse || '—'}</td>
                     <td className="px-3 py-2">{typeof r.total_price === 'number' ? `$${r.total_price}` : '—'}</td>
+                    {(() => {
+                      const key = `${selectedDay}|${r.sku}`;
+                      const c = costsByKey.get(key) || {};
+                      const fmt = (val?: number|null, cur?: string|null) => (typeof val === 'number' ? `${val} ${cur || ''}`.trim() : '—');
+                      return (
+                        <>
+                          <td className="px-3 py-2">{fmt(c.purchase_amount, c.purchase_currency)}</td>
+                          <td className="px-3 py-2">{fmt(c.logistics_amount, c.logistics_currency)}</td>
+                          <td className="px-3 py-2">{typeof c.fx_rate === 'number' ? c.fx_rate : '—'}</td>
+                        </>
+                      );
+                    })()}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <div className="text-xs text-gray-600 mt-2">Клик по строке — редактировать затраты</div>
         </div>
       )}
 

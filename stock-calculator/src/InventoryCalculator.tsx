@@ -525,13 +525,13 @@ const InventoryOptionCalculator = () => {
         byWarehouseLatest.forEach((m, sku) => {
           let sum = 0;
           m.forEach(v => { sum += v.qty; });
-          totals.set(sku, (totals.get(sku) || 0) + sum);
+          totals.set(sku, sum);
         });
 
         const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
         let initialProducts: Product[] = Array.from(totals.keys()).map((sku, idx) => ({
           id: idx + 1,
-          name: nameBySku.get(sku) || subjBySku.get(sku) || 'Товар WB',
+          name: nameBySku.get(sku) || sku,
           sku,
           purchase: 0,
           margin: 0,
@@ -617,16 +617,25 @@ const InventoryOptionCalculator = () => {
         // Применим цены и краткий анализ продаж (30 дней)
         if (initialProducts.length > 0) {
           // цены
+          // Всегда применяем имя: vendorCode -> supplierArticle -> name -> sku
+          initialProducts = initialProducts.map(p => ({ ...p, name: nameBySku.get(p.sku) || p.name || p.sku }));
+          // Категория из subject/object.name
+          initialProducts = initialProducts.map(p => ({ ...p, category: subjBySku.get(p.sku) || p.category || '' }));
+          // Цены (если есть)
           if (priceSnapshot) {
             initialProducts = initialProducts.map(p => {
               const pr = priceSnapshot!.get(p.sku);
-              const newName = nameBySku.get(p.sku) || p.name;
-              return pr ? { ...p, name: newName, retailPrice: pr.discounted ?? pr.price, discountPercent: pr.discount } : { ...p, name: newName };
+              return pr ? { ...p, retailPrice: pr.discounted ?? pr.price, discountPercent: pr.discount } : p;
             });
-          } else {
-            // даже без цен применим найденные имена/категории
-            initialProducts = initialProducts.map(p => ({ ...p, name: nameBySku.get(p.sku) || p.name, category: p.category || subjBySku.get(p.sku) || '' }));
           }
+
+          // Пересчитаем маржу как (розничная цена - себестоимость), если обе известны
+          initialProducts = initialProducts.map(p => {
+            const canCalc = typeof p.retailPrice === 'number' && typeof p.purchase === 'number' && p.retailPrice! > 0 && p.purchase! >= 0;
+            if (!canCalc) return p;
+            const m = Math.max(0, Number(p.retailPrice) - Number(p.purchase));
+            return { ...p, margin: m };
+          });
           // анализ продаж уже учтен при пересчете, но отдельно посчитаем 30д если есть sales в БД
           try {
             const since = new Date(); since.setDate(since.getDate() - 30);
