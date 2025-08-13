@@ -215,7 +215,7 @@ const SuppliesTab: React.FC = () => {
   };
 
   const deletePurchaseOrder = async (orderId: string) => {
-    if (!confirm('Удалить заказ?')) return;
+    if (!window.confirm('Удалить заказ?')) return;
     
     try {
       const { data: { user } } = await supabase.auth.getUser();
