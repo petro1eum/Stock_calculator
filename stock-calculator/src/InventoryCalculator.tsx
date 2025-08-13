@@ -673,15 +673,27 @@ const InventoryOptionCalculator = () => {
               .order('date', { ascending: true })
               .limit(50000);
 
-            const { data: purchaseOrders } = await supabase
+            // Избегаем вложенного select (REST 400). Грузим отдельно и объединяем на клиенте
+            const { data: ordersRaw } = await supabase
               .from('wb_purchase_orders')
-              .select(`
-                id, created_at, country, total_cost, logistics_cost,
-                wb_purchase_order_items (
-                  sku, qty, unit_cost, warehouse_target
-                )
-              `)
+              .select('id, created_at, country, total_cost, logistics_cost')
               .eq('user_id', user.id);
+
+            const { data: itemsRaw } = await supabase
+              .from('wb_purchase_order_items')
+              .select('po_id, sku, qty, unit_cost, warehouse_target')
+              .eq('user_id', user.id);
+
+            const itemsByOrder = new Map<string, any[]>();
+            (itemsRaw || []).forEach((it: any) => {
+              if (!itemsByOrder.has(it.po_id)) itemsByOrder.set(it.po_id, []);
+              itemsByOrder.get(it.po_id)!.push({ sku: it.sku, qty: it.qty, unit_cost: it.unit_cost, warehouse_target: it.warehouse_target });
+            });
+
+            const purchaseOrders = (ordersRaw || []).map((o: any) => ({
+              ...o,
+              items: itemsByOrder.get(o.id) || []
+            }));
 
             const { data: logisticsEvents } = await supabase
               .from('logistics_calendar')
