@@ -1081,50 +1081,123 @@ const InventoryOptionCalculator = () => {
         const userId = session?.user?.id;
         if (!userId) return;
 
-        // Прямая запись в wb_costs для известных SKU
+        // Получаем все SKU из базы данных и классифицируем их
         const today = new Date().toISOString().split('T')[0] + 'T00:00:00.000Z';
-        const costsData = [
-          {
-            user_id: userId,
-            date: today,
-            sku: '202342304',  // сумка
-            purchase_amount: 21,
-            purchase_currency: 'CNY',
-            logistics_amount: 0.98, // 3 USD/kg * (382kg/1171units)
-            logistics_currency: 'USD',
-            fx_rate: 13.0
-          },
-          {
-            user_id: userId,
-            date: today,
-            sku: '364594869',  // брелок/обвес
-            purchase_amount: 25,
-            purchase_currency: 'CNY',
-            logistics_amount: null,
-            logistics_currency: null,
-            fx_rate: 13.0
-          },
-          {
-            user_id: userId,
-            date: today,
-            sku: '247956069',  // наушники
-            purchase_amount: 26,
-            purchase_currency: 'CNY',
-            logistics_amount: null,
-            logistics_currency: null,
-            fx_rate: 13.0
+        const allSkus = new Set<string>();
+        const skuInfo = new Map<string, { subject?: string; name?: string; vendorCode?: string }>();
+
+        // Собираем SKU из всех таблиц
+        const [stocksRes, analyticsRes, salesRes] = await Promise.all([
+          supabase.from('wb_stocks').select('sku, raw').eq('user_id', userId).limit(10000),
+          supabase.from('wb_analytics').select('nm_id, raw').eq('user_id', userId).limit(10000),
+          supabase.from('wb_sales').select('sku, raw').eq('user_id', userId).limit(10000)
+        ]);
+
+        // Обрабатываем wb_stocks
+        (stocksRes.data || []).forEach(row => {
+          const sku = String(row.sku || '');
+          if (sku) {
+            allSkus.add(sku);
+            if (!skuInfo.has(sku)) {
+              skuInfo.set(sku, {
+                subject: row.raw?.subject,
+                name: row.raw?.name || row.raw?.vendorCode || row.raw?.supplierArticle,
+                vendorCode: row.raw?.vendorCode
+              });
+            }
           }
-        ];
+        });
+
+        // Обрабатываем wb_analytics
+        (analyticsRes.data || []).forEach(row => {
+          const sku = String(row.nm_id || '');
+          if (sku) {
+            allSkus.add(sku);
+            if (!skuInfo.has(sku)) {
+              skuInfo.set(sku, {
+                subject: row.raw?.object?.name,
+                name: row.raw?.name || row.raw?.vendorCode || row.raw?.supplierArticle,
+                vendorCode: row.raw?.vendorCode
+              });
+            }
+          }
+        });
+
+        // Обрабатываем wb_sales
+        (salesRes.data || []).forEach(row => {
+          const sku = String(row.sku || '');
+          if (sku) {
+            allSkus.add(sku);
+            if (!skuInfo.has(sku)) {
+              skuInfo.set(sku, {
+                subject: row.raw?.subject,
+                name: row.raw?.name || row.raw?.supplierArticle || row.raw?.vendorCode,
+                vendorCode: row.raw?.vendorCode || row.raw?.supplierArticle
+              });
+            }
+          }
+        });
+
+        console.log(`Найдено ${allSkus.size} уникальных SKU для заполнения цен`);
+
+        const costsData: any[] = [];
+        const logisticsPerUnitUsdBags = 3.0 * (382.0 / 1171.0); // 3 USD/kg * (382kg/1171units)
+
+        allSkus.forEach(sku => {
+          const info = skuInfo.get(sku);
+          const subject = (info?.subject || '').toLowerCase();
+          const name = (info?.name || '').toLowerCase(); 
+          const vendor = (info?.vendorCode || '').toLowerCase();
+          const searchText = `${subject} ${name} ${vendor}`;
+
+          let purchaseAmount: number;
+          let logisticsAmount: number | null = null;
+          let logisticsCurrency: string | null = null;
+
+          // Классификация товаров
+          if (searchText.includes('сумк') || searchText.includes('кроссбоди') || searchText.includes('bag')) {
+            purchaseAmount = 21; // CNY за сумку
+            logisticsAmount = logisticsPerUnitUsdBags;
+            logisticsCurrency = 'USD';
+          } else if (searchText.includes('наушник') || searchText.includes('headphone')) {
+            purchaseAmount = 26; // CNY за наушники
+          } else if (searchText.includes('брелок') || searchText.includes('брелоки') || searchText.includes('keychain') || searchText.includes('обвес')) {
+            purchaseAmount = 25; // CNY за брелок/обвес
+          } else {
+            // Неопознанный товар - ставим базовую цену брелка
+            purchaseAmount = 25;
+          }
+
+          costsData.push({
+            user_id: userId,
+            date: today,
+            sku,
+            purchase_amount: purchaseAmount,
+            purchase_currency: 'CNY',
+            logistics_amount: logisticsAmount,
+            logistics_currency: logisticsCurrency,
+            fx_rate: 13.0
+          });
+        });
+
+        console.log(`Подготовлено ${costsData.length} записей для wb_costs`);
 
         let inserted = 0;
-        for (const item of costsData) {
+        // Записываем батчами по 100 записей
+        for (let i = 0; i < costsData.length; i += 100) {
+          const batch = costsData.slice(i, i + 100);
           try {
             const { error } = await supabase
               .from('wb_costs')
-              .upsert(item, { onConflict: 'user_id,date,sku' });
-            if (!error) inserted++;
+              .upsert(batch, { onConflict: 'user_id,date,sku' });
+            if (!error) {
+              inserted += batch.length;
+              console.log(`Записано ${inserted}/${costsData.length} записей wb_costs`);
+            } else {
+              console.error('Batch upsert error:', error);
+            }
           } catch (e) {
-            console.warn('Cost insert error for SKU', item.sku, e);
+            console.warn('Batch insert error:', e);
           }
         }
 
