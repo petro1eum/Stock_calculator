@@ -85,7 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         raw: r
       }));
       // Use composite conflict target to avoid duplicates on refreshes
-      const { error } = await admin.from('wb_stocks').upsert(rows, { onConflict: 'user_id,sku,barcode,date', ignoreDuplicates: true as any });
+      const { error } = await admin.from('wb_stocks').upsert(rows, { onConflict: 'user_id,sku,barcode,warehouse,date', ignoreDuplicates: true as any });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true, inserted: rows.length });
     }

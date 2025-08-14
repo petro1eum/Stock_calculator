@@ -246,7 +246,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
           raw: r
         };
       });
-      const { error } = await supabase.from('wb_stocks').upsert(mapped as any, { onConflict: 'user_id,sku,barcode,date' as any });
+      const { error } = await supabase.from('wb_stocks').upsert(mapped as any, { onConflict: 'user_id,sku,barcode,warehouse,date' as any });
       if (error) throw error;
       // Автосоздание и обновление currentStock
       const totals = new Map<string, number>();
