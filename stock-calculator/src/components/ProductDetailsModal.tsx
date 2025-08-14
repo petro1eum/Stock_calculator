@@ -387,7 +387,33 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
   // Группировка остатков по складам: берём по каждому штрихкоду (barcode) последний снапшот, затем суммируем по складу
   // Также добавляем склады, встречающиеся в последних продажах, даже если в stocks их нет (показываем 0)
   const warehouses: Array<{ warehouse: string; qty: number; inWayToClient: number; inWayFromClient: number }>= (() => {
-    const normalize = (w?: string|null) => (w && String(w).trim()) ? String(w).trim() : 'UNKNOWN';
+    const normalize = (w?: string|null) => {
+      let s = (w && String(w).trim()) ? String(w).trim() : 'UNKNOWN';
+      const l = s.toLowerCase();
+      // Канонизация часто встречающихся вариантов названий WB складов
+      if (l.includes('коледин')) return 'Коледино';
+      if (l.includes('новосемейкин') || l.includes('новосемейкино')) return 'Самара (Новосемейкино)';
+      if (l.includes('санкт') && l.includes('уткина')) return 'Санкт-Петербург Уткина Заводь';
+      if (l.includes('виртуальный') && l.includes('краснодар')) return 'Виртуальный Краснодар';
+      if (l.includes('сц ') && l.includes('ереван')) return 'СЦ Ереван';
+      if (l.includes('рязан') && l.includes('тюшев')) return 'Рязань (Тюшевское)';
+      if (l.includes('екатеринбург') && l.includes('испыт')) return 'Екатеринбург - Испытателей 14г';
+      if (l.includes('екатеринбург') && l.includes('перспектив')) return 'Екатеринбург - Перспективный 12';
+      if (l.includes('чашников')) return 'Чашниково';
+      if (l.includes('обухов')) return 'Обухово';
+      if (l.includes('котовск')) return 'Котовск';
+      if (l.includes('волгоград')) return 'Волгоград';
+      if (l.includes('череповец')) return 'Череповец';
+      if (l.includes('раду')) return 'Радумля 1';
+      if (l.includes('тула')) return 'Тула';
+      if (l.includes('иванов')) return 'Иваново';
+      if (l.includes('краснодар')) return 'Краснодар';
+      if (l.includes('казан')) return 'Казань';
+      if (l.includes('электрост')) return 'Электросталь';
+      if (l.includes('невинномыс')) return 'Невинномысск';
+      if (l.includes('новосибир')) return 'Новосибирск';
+      return s;
+    };
     type Snap = { ts: number; qty: number; iwc: number; iwf: number };
     const latestByWhBarcode = new Map<string, Map<string, Snap>>();
     (stocks || []).forEach(s => {
