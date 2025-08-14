@@ -112,9 +112,10 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
           .filter((row: any) => Boolean(row.date && row.sku));
         if (rows.length > 0) {
           // Используем уникальный индекс (user_id,sku,barcode,warehouse,date)
-          await supabase
+          const { error: upStocksErr } = await supabase
             .from('wb_stocks')
             .upsert(rows as any, { onConflict: 'user_id,sku,barcode,warehouse,date' as any, ignoreDuplicates: true as any });
+          if (upStocksErr) throw upStocksErr;
         }
       }
 
@@ -138,9 +139,10 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
             warehouse: s.warehouseName || null,
             raw: s
           }));
-          await supabase
+          const { error: upSalesErr } = await supabase
             .from('wb_sales')
             .upsert(saleRows as any, { onConflict: 'user_id,sale_id' as any, ignoreDuplicates: true as any });
+          if (upSalesErr) throw upSalesErr;
         }
       }
 
@@ -164,9 +166,10 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
               discount: typeof match.discount === 'number' ? match.discount : (typeof match.clubDiscount === 'number' ? match.clubDiscount : null),
               raw: { ...match, size: s }
             }));
-            await supabase
+            const { error: upPricesErr } = await supabase
               .from('wb_prices')
               .upsert(priceRows as any, { onConflict: 'user_id,nm_id,size_id' as any, ignoreDuplicates: true as any });
+            if (upPricesErr) throw upPricesErr;
           }
         }
       } catch {}
