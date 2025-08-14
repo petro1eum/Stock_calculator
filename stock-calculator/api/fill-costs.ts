@@ -36,6 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const defaults = {
       bagCnyPerUnit: typeof body.bagCnyPerUnit === 'number' ? body.bagCnyPerUnit : 21,
       headphonesCnyPerUnit: typeof body.headphonesCnyPerUnit === 'number' ? body.headphonesCnyPerUnit : 26,
+      keychainCnyPerUnit: typeof body.keychainCnyPerUnit === 'number' ? body.keychainCnyPerUnit : 25,
       batchUnitsBags: typeof body.batchUnitsBags === 'number' ? body.batchUnitsBags : 1171,
       batchWeightBagsKg: typeof body.batchWeightBagsKg === 'number' ? body.batchWeightBagsKg : 382,
       usdPerKg: typeof body.usdPerKg === 'number' ? body.usdPerKg : 3,
@@ -105,6 +106,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           date: today,
           sku,
           purchase_amount: defaults.headphonesCnyPerUnit,
+          purchase_currency: 'CNY',
+          logistics_amount: null,
+          logistics_currency: null,
+          fx_rate: cnyRub || null
+        });
+        return;
+      }
+      // keychains / брелоки / обвес
+      if (text.includes('брелок') || text.includes('брелоки') || text.includes('keychain') || text.includes('обвес')) {
+        rows.push({
+          user_id: userId,
+          date: today,
+          sku,
+          purchase_amount: defaults.keychainCnyPerUnit,
           purchase_currency: 'CNY',
           logistics_amount: null,
           logistics_currency: null,
