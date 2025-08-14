@@ -503,6 +503,34 @@ const InventoryOptionCalculator = () => {
         const nameBySku = new Map<string, string>();
         let priceSnapshot: Map<string, { price?: number; discounted?: number; discount?: number; vendor?: string }> | null = null;
         const byWarehouseLatest = new Map<string, Map<string, { qty: number; date: number }>>(); // sku -> wh -> {qty, ts}
+        // Нормализация названий складов WB
+        const normalizeWarehouse = (w?: string|null) => {
+          let s = (w && String(w).trim()) ? String(w).trim() : 'UNKNOWN';
+          const l = s.toLowerCase();
+          if (l.includes('коледин')) return 'Коледино';
+          if (l.includes('новосемейкин') || l.includes('новосемейкино')) return 'Самара (Новосемейкино)';
+          if (l.includes('санкт') && l.includes('уткина')) return 'Санкт-Петербург Уткина Заводь';
+          if (l.includes('виртуальный') && l.includes('краснодар')) return 'Виртуальный Краснодар';
+          if (l.includes('сц ') && l.includes('ереван')) return 'СЦ Ереван';
+          if (l.includes('рязан') && l.includes('тюшев')) return 'Рязань (Тюшевское)';
+          if (l.includes('екатеринбург') && l.includes('испыт')) return 'Екатеринбург - Испытателей 14г';
+          if (l.includes('екатеринбург') && l.includes('перспектив')) return 'Екатеринбург - Перспективный 12';
+          if (l.includes('чашников')) return 'Чашниково';
+          if (l.includes('обухов')) return 'Обухово';
+          if (l.includes('котовск')) return 'Котовск';
+          if (l.includes('волгоград')) return 'Волгоград';
+          if (l.includes('череповец')) return 'Череповец';
+          if (l.includes('раду')) return 'Радумля 1';
+          if (l.includes('тула')) return 'Тула';
+          if (l.includes('иванов')) return 'Иваново';
+          if (l.includes('краснодар')) return 'Краснодар';
+          if (l.includes('казан')) return 'Казань';
+          if (l.includes('электрост')) return 'Электросталь';
+          if (l.includes('невинномыс')) return 'Невинномысск';
+          if (l.includes('новосибир')) return 'Новосибирск';
+          return s;
+        };
+
         (stocks || []).forEach((r: any) => {
           const sku = String(r.sku);
           const qty = Number(r.quantity || 0);
@@ -514,7 +542,8 @@ const InventoryOptionCalculator = () => {
                        : (typeof r.raw?.supplierArticle === 'string' ? r.raw.supplierArticle : undefined);
           if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
           if (name && !nameBySku.has(sku)) nameBySku.set(sku, name);
-          const wh = (r.warehouse || r.raw?.warehouseName || 'Склад WB').toString();
+          const whRaw = (r.warehouse || r.raw?.warehouseName || 'Склад WB').toString();
+          const wh = normalizeWarehouse(whRaw);
           if (!byWarehouseLatest.has(sku)) byWarehouseLatest.set(sku, new Map());
           const m = byWarehouseLatest.get(sku)!;
           const prev = m.get(wh);
