@@ -65,8 +65,16 @@ const InventoryOptionCalculator = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
   
-  // Вкладки
-  const [activeTab, setActiveTab] = useState("dashboard");
+  // Вкладки (восстанавливаем последнюю открытую)
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try { return window.localStorage.getItem('activeTab') || 'dashboard'; } catch {}
+    }
+    return 'dashboard';
+  });
+  useEffect(() => {
+    try { if (typeof window !== 'undefined') window.localStorage.setItem('activeTab', activeTab); } catch {}
+  }, [activeTab]);
   
   // Сценарный анализ
   const [scenarios] = useState<Scenario[]>([
