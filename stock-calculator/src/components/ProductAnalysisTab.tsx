@@ -50,6 +50,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
   const [testQuantity, setTestQuantity] = useState(0);
   
   const product = productsWithMetrics.find(p => p.id === selectedProduct);
+  const fmtRub = (n: number) => new Intl.NumberFormat('ru-RU').format(Math.round(n || 0));
   
   // Обновляем testQuantity при смене товара
   React.useEffect(() => {
@@ -138,6 +139,20 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
   const badgeColor = product.optQ < product.safety && product.optValue > 0 ? "bg-yellow-500 text-white" : product.optValue > 0 ? "bg-green-500 text-white" : "bg-red-500 text-white";
   const frozenCapital = product.optQ * product.purchase;
   const fmt = formatNumber;
+  const annualRevenueRub = React.useMemo(() => {
+    const sales = (product as any)?.salesHistory as Array<{ date: string; revenue?: number }> | undefined;
+    if (!sales || sales.length === 0) return product.revenue || 0;
+    const now = new Date();
+    const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    let sum = 0;
+    for (const s of sales) {
+      const t = new Date(s.date).getTime();
+      if (!isNaN(t) && t >= oneYearAgo.getTime() && t <= now.getTime()) {
+        if (typeof s.revenue === 'number') sum += s.revenue;
+      }
+    }
+    return sum || product.revenue || 0;
+  }, [product]);
 
   return (
     <div className="bg-white rounded-lg shadow-md p-4">
@@ -160,21 +175,21 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-gray-100 p-3 rounded">
             <div className="text-sm text-gray-500">Закупочная цена</div>
-            <div className="text-lg font-bold">${product.purchase}</div>
+            <div className="text-lg font-bold">₽{fmtRub(product.purchase)}</div>
           </div>
           <div className="bg-gray-100 p-3 rounded">
             <div className="text-sm text-gray-500">Маржа</div>
-            <div className="text-lg font-bold">${product.margin}</div>
-            <div className="text-xs text-gray-500">{((product.margin / product.purchase) * 100).toFixed(0)}% рентабельность</div>
+            <div className="text-lg font-bold">₽{fmtRub(product.margin)}</div>
+            <div className="text-xs text-gray-500">{product.purchase > 0 ? ((product.margin / product.purchase) * 100).toFixed(0) : '—'}% рентабельность</div>
           </div>
           <div className="bg-gray-100 p-3 rounded">
             <div className="text-sm text-gray-500">Спрос в неделю</div>
             <div className="text-lg font-bold">{fmt(product.muWeek)} ± {fmt(product.sigmaWeek)}</div>
-            <div className="text-xs text-gray-500">CV: {((product.sigmaWeek / product.muWeek) * 100).toFixed(0)}%</div>
+            <div className="text-xs text-gray-500">CV: {product.muWeek > 0 ? ((product.sigmaWeek / product.muWeek) * 100).toFixed(0) : '—'}%</div>
           </div>
           <div className="bg-gray-100 p-3 rounded">
             <div className="text-sm text-gray-500">Годовая выручка</div>
-            <div className="text-lg font-bold">${fmt(product.revenue)}</div>
+            <div className="text-lg font-bold">₽{fmtRub(annualRevenueRub)}</div>
           </div>
         </div>
         
@@ -182,7 +197,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
           <div className="bg-gray-100 p-3 rounded">
             <div className="text-sm text-gray-500">Розничная цена (WB)</div>
-            <div className="text-lg font-bold">{product.retailPrice ? `$${fmt(product.retailPrice)}` : '—'}</div>
+            <div className="text-lg font-bold">{product.retailPrice ? `₽${fmtRub(product.retailPrice)}` : '—'}</div>
             {typeof product.discountPercent === 'number' && (
               <div className="text-xs text-gray-500">Скидка: {product.discountPercent}%</div>
             )}
@@ -190,12 +205,12 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           <div className="bg-gray-100 p-3 rounded">
             <div className="text-sm text-gray-500">Продажи 30 дней</div>
             <div className="text-lg font-bold">{fmt(product.sales30d || 0)} шт</div>
-            <div className="text-xs text-gray-500">Выручка: ${fmt(product.revenue30d || 0)}</div>
+            <div className="text-xs text-gray-500">Выручка: ₽{fmtRub(product.revenue30d || 0)}</div>
           </div>
           <div className="bg-gray-100 p-3 rounded">
             <div className="text-sm text-gray-500">Продажи 12 мес</div>
             <div className="text-lg font-bold">{fmt(product.sales12m || 0)} шт</div>
-            <div className="text-xs text-gray-500">Выручка: ${fmt(product.revenue12m || 0)}</div>
+            <div className="text-xs text-gray-500">Выручка: ₽{fmtRub(product.revenue12m || 0)}</div>
           </div>
         </div>
 
@@ -235,12 +250,15 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           <div className="mt-4">
             <h5 className="text-sm font-medium text-gray-600 mb-2">Остатки по складам WB:</h5>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {Object.entries(product.stockByWarehouse).map(([warehouse, qty]) => (
-                <div key={warehouse} className="bg-gray-50 p-2 rounded text-xs">
-                  <div className="font-medium">{warehouse}</div>
-                  <div className="text-gray-600">{fmt(qty)} шт</div>
-                </div>
-              ))}
+              {Object.entries(product.stockByWarehouse)
+                .filter(([_, qty]) => Number(qty) > 0)
+                .sort((a, b) => Number(b[1]) - Number(a[1]))
+                .map(([warehouse, qty]) => (
+                  <div key={warehouse} className="bg-gray-50 p-2 rounded text-xs">
+                    <div className="font-medium">{warehouse}</div>
+                    <div className="text-gray-600">{fmt(qty)} шт</div>
+                  </div>
+                ))}
             </div>
           </div>
         )}
@@ -251,11 +269,11 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
             <div>
               <div className="text-green-600 font-medium">Текущая себестоимость</div>
-              <div className="text-green-800">${fmt(product.purchase)}</div>
+              <div className="text-green-800">₽{fmtRub(product.purchase)}</div>
             </div>
             <div>
               <div className="text-green-600 font-medium">Маржа за единицу</div>
-              <div className="text-green-800">${fmt(product.margin)}</div>
+              <div className="text-green-800">₽{fmtRub(product.margin)}</div>
             </div>
             <div>
               <div className="text-green-600 font-medium">Валюта/Поставщик</div>
@@ -281,9 +299,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             </div>
             <div className="flex flex-col items-center justify-center bg-gray-100 p-3 rounded">
               <span className="text-xs text-gray-500 mb-1">Ценность опциона</span>
-              <span className={`text-lg font-bold ${product.optValue > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                ${fmt(product.optValue)}
-              </span>
+              <span className={`text-lg font-bold ${product.optValue > 0 ? 'text-green-600' : 'text-red-600'}`}>₽{fmtRub(product.optValue)}</span>
             </div>
             <div className="flex flex-col items-center justify-center bg-gray-100 p-3 rounded">
               <span className="text-xs text-gray-500 mb-1">Safety-stock</span>
@@ -291,7 +307,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             </div>
             <div className="flex flex-col items-center justify-center bg-gray-100 p-3 rounded">
               <span className="text-xs text-gray-500 mb-1">Замороженный капитал</span>
-              <span className="text-lg font-bold">${fmt(frozenCapital)}</span>
+              <span className="text-lg font-bold">₽{fmtRub(frozenCapital)}</span>
             </div>
           </div>
         </div>
@@ -335,21 +351,18 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           </div>
           <div className={`p-3 rounded ${currentMetrics.value > 0 ? 'bg-green-50' : 'bg-red-50'}`}>
             <div className="text-sm text-gray-600">То заработаю:</div>
-            <div className={`text-lg font-bold ${currentMetrics.value > 0 ? 'text-green-600' : 'text-red-600'}`}>
-              ${fmt(currentMetrics.value)}
-            </div>
+            <div className={`text-lg font-bold ${currentMetrics.value > 0 ? 'text-green-600' : 'text-red-600'}`}>₽{fmtRub(currentMetrics.value)}</div>
             <div className="text-xs text-gray-500">ROI: {currentMetrics.roi.toFixed(1)}%</div>
           </div>
           <div className="bg-gray-50 p-3 rounded">
             <div className="text-sm text-gray-600">Вложу денег:</div>
-            <div className="text-lg font-bold">${fmt(currentMetrics.investment)}</div>
-            <div className="text-xs text-gray-500">+ ${fmt(currentMetrics.storage)} хранение</div>
+            <div className="text-lg font-bold">₽{fmtRub(currentMetrics.investment)}</div>
+            <div className="text-xs text-gray-500">+ ₽{fmtRub(currentMetrics.storage)} хранение</div>
           </div>
           <div className="bg-blue-50 p-3 rounded">
             <div className="text-sm text-gray-600">Сравнение с оптимальным:</div>
             <div className={`text-lg font-bold ${currentMetrics.value >= optimalMetrics.value ? 'text-green-600' : 'text-orange-600'}`}>
-              {currentMetrics.value >= optimalMetrics.value ? '✓ Оптимально' : 
-               `−$${fmt(optimalMetrics.value - currentMetrics.value)}`}
+              {currentMetrics.value >= optimalMetrics.value ? '✓ Оптимально' : `−₽${fmtRub(optimalMetrics.value - currentMetrics.value)}`}
             </div>
             <div className="text-xs text-gray-500">
               Оптимум: {product.optQ} шт
@@ -463,12 +476,12 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
                 tick={{ fontSize: 12 }}
               />
               <YAxis
-                label={{ value: 'Прибыль ($)', angle: -90, position: 'insideLeft', style: { fontSize: 14 } }}
-                tickFormatter={(value) => `$${fmt(Number(value))}`}
+                label={{ value: 'Прибыль (₽)', angle: -90, position: 'insideLeft', style: { fontSize: 14 } }}
+                tickFormatter={(value) => `₽${fmtRub(Number(value))}`}
                 tick={{ fontSize: 12 }}
               />
               <Tooltip
-                formatter={(value) => ['$' + fmt(Number(value)), 'Прибыль']}
+                formatter={(value) => ['₽' + fmtRub(Number(value)), 'Прибыль']}
                 labelFormatter={(value) => `При заказе ${value} шт`}
                 contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', borderRadius: '8px' }}
               />
@@ -536,7 +549,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             <div>
               <div className="text-sm font-medium text-orange-900">Оптимальный заказ</div>
               <div className="text-lg font-bold text-orange-600">{fmt(product.optQ)} штук</div>
-              <div className="text-xs text-orange-700">Макс. прибыль: ${fmt(product.optValue)}</div>
+              <div className="text-xs text-orange-700">Макс. прибыль: ₽{fmtRub(product.optValue)}</div>
             </div>
           </div>
           <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
@@ -551,7 +564,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             <div className="w-1 h-8 bg-red-500 rounded"></div>
             <div>
               <div className="text-sm font-medium text-red-900">Зона убытков</div>
-              <div className="text-lg font-bold text-red-600">Ниже $0</div>
+              <div className="text-lg font-bold text-red-600">Ниже 0 ₽</div>
               <div className="text-xs text-red-700">Невыгодно закупать</div>
             </div>
           </div>
