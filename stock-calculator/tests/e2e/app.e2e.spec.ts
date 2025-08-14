@@ -20,6 +20,8 @@ test('таблица товаров и модалка с реальными ос
   const zeroText = page.getByText('Нет положительных остатков');
   // либо положительные склады, либо явное отсутствие
   await expect(zeroText.or(page.locator('div').filter({ hasText: 'склад' }))).toBeVisible();
+  // Кнопка обновления WB существует
+  await expect(page.getByTestId('btn-refresh-wb')).toBeVisible();
 });
 
 test('дашборд и риск-панель в ₽', async ({ page }) => {
