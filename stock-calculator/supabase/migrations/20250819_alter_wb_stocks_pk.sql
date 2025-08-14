@@ -1,18 +1,14 @@
 -- Align primary key with conflict target: include warehouse and ensure NOT NULL
-do $$ begin
-  -- Fill NULL or empty warehouse values with 'UNKNOWN' to satisfy NOT NULL PK
-  perform 1;
-  exception when others then null;
-end $$;
-
+-- 1) Backfill null/empty warehouses
 update public.wb_stocks
 set warehouse = 'UNKNOWN'
 where warehouse is null or trim(warehouse) = '';
 
+-- 2) Make warehouse NOT NULL
 alter table public.wb_stocks
   alter column warehouse set not null;
 
--- Drop old PK (user_id, sku, barcode, date) and add new PK including warehouse
+-- 3) Switch primary key to include warehouse
 alter table public.wb_stocks
   drop constraint if exists wb_stocks_pkey;
 
