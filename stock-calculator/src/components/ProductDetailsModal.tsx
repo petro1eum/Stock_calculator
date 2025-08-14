@@ -110,9 +110,10 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
           })
           .filter((row: any) => Boolean(row.date && row.sku));
         if (rows.length > 0) {
+          // В схеме PK: (user_id, sku, barcode, date). onConflict должен соответствовать
           await supabase
             .from('wb_stocks')
-            .upsert(rows as any, { onConflict: 'user_id,sku,barcode,warehouse,date' as any, ignoreDuplicates: true as any });
+            .upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any, ignoreDuplicates: true as any });
         }
       }
 
