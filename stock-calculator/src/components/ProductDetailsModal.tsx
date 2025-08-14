@@ -55,6 +55,16 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
     return null;
   };
 
+  // Читаем WB ключ пользователя из Supabase
+  const getWbKey = async (): Promise<string | null> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data } = await supabase.from('user_secrets').select('wb_api_key').eq('user_id', user.id).maybeSingle();
+      return (data?.wb_api_key as string) || null;
+    } catch { return null; }
+  };
+
   const refreshFromWB = async () => {
     if (!product) return;
     try {
@@ -64,17 +74,14 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
       // Stocks (последние 30 дней)
       const since = new Date(); since.setDate(since.getDate() - 30);
       const dateParam = isoDateParam(since);
-      // Используем наш серверный API-роут, чтобы обойти CORS и скрыть ключ
-      const stocksResp = await fetch(`/api/wb-stocks?dateFrom=${dateParam.split('T')[0]}`);
-      const stocksRawText = await stocksResp.text();
-      if (!stocksResp.ok) {
-        throw new Error(`WB stocks API error: ${stocksResp.status} ${stocksResp.statusText}. ${stocksRawText.slice(0, 200)}`);
-      }
-      let stocksJsonParsed: any;
-      try { stocksJsonParsed = JSON.parse(stocksRawText); } catch {
-        throw new Error(`WB stocks API вернул не-JSON: ${stocksRawText.slice(0, 120)}`);
-      }
-      const stocksList: any[] = (stocksJsonParsed?.stocks || []) as any[];
+      // Прямой WB запрос с ключом пользователя (надежно и без 404 роутов)
+      const key = await getWbKey();
+      if (!key) throw new Error('Нет WB API ключа. Сохраните его в настройках.');
+      const directUrlStocks = `https://statistics-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${dateParam}`;
+      const wbStocksResp = await fetch(directUrlStocks, { headers: { Authorization: key, Accept: 'application/json' } });
+      if (!wbStocksResp.ok) throw new Error(`WB stocks: ${wbStocksResp.status} ${wbStocksResp.statusText}`);
+      const wbStocksJson: any = await wbStocksResp.json();
+      const stocksList: any[] = Array.isArray(wbStocksJson) ? wbStocksJson : (wbStocksJson?.stocks || []);
       const skuStocks = (stocksList || []).filter((r: any) => String(r.nmId ?? r.nmid) === skuStr);
 
       // Save to DB
@@ -117,7 +124,6 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
           .select('date, sku, quantity, in_way_to_client, in_way_from_client, warehouse, price, discount, tech_size, barcode')
           .eq('user_id', user.id)
           .eq('sku', skuStr)
-          .gte('date', `${since.toISOString().split('T')[0]}T00:00:00Z`)
           .limit(10000);
         if (dbStocks) {
           setStocks(dbStocks.map((r: any) => ({
@@ -169,12 +175,11 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           // Stocks from DB
-          const { data: dbStocks } = await supabase
+        const { data: dbStocks } = await supabase
             .from('wb_stocks')
             .select('date, sku, quantity, in_way_to_client, in_way_from_client, warehouse, price, discount, tech_size, barcode')
             .eq('user_id', user.id)
             .eq('sku', skuStr)
-            .gte('date', `${dateFrom}T00:00:00Z`)
             .limit(10000);
           if (dbStocks && dbStocks.length > 0) {
             setStocks(dbStocks.map((r: any) => ({
