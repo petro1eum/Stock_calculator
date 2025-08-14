@@ -721,7 +721,8 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
                         };
                         const { error } = await supabase.from('wb_costs').upsert(payload, { onConflict: 'user_id,date,sku' });
                         if (error) throw error;
-                        setCostStatus('Сохранено. Обновите страницу для пересчёта таблицы.');
+                        setCostStatus('Сохранено. Обновляю данные...');
+                        setTimeout(()=>{ try { window.location.reload(); } catch {} }, 600);
                       } catch (e: any) {
                         setCostStatus(e.message || 'Ошибка сохранения');
                       }
