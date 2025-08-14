@@ -1058,7 +1058,7 @@ const InventoryOptionCalculator = () => {
   const totalOptimalStock = productsWithMetrics.reduce((sum, p) => sum + p.optQ, 0);
   const totalOptionValue = productsWithMetrics.reduce((sum, p) => sum + p.optValue, 0);
 
-  // Автозаполнение себестоимости через серверный /api/fill-costs, если у части товаров закуп = 0
+  // Автозаполнение себестоимости напрямую в wb_costs, если у товаров закуп = 0
   useEffect(() => {
     (async () => {
       try {
@@ -1078,21 +1078,61 @@ const InventoryOptionCalculator = () => {
           }
         } catch {}
         const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) return;
-        // Try GET on /api (rewrite) then direct path; parse JSON and check inserted
-        const tryCall = async (url: string) => {
+        const userId = session?.user?.id;
+        if (!userId) return;
+
+        // Прямая запись в wb_costs для известных SKU
+        const today = new Date().toISOString().split('T')[0] + 'T00:00:00.000Z';
+        const costsData = [
+          {
+            user_id: userId,
+            date: today,
+            sku: '202342304',  // сумка
+            purchase_amount: 21,
+            purchase_currency: 'CNY',
+            logistics_amount: 0.98, // 3 USD/kg * (382kg/1171units)
+            logistics_currency: 'USD',
+            fx_rate: 13.0
+          },
+          {
+            user_id: userId,
+            date: today,
+            sku: '364594869',  // брелок/обвес
+            purchase_amount: 25,
+            purchase_currency: 'CNY',
+            logistics_amount: null,
+            logistics_currency: null,
+            fx_rate: 13.0
+          },
+          {
+            user_id: userId,
+            date: today,
+            sku: '247956069',  // наушники
+            purchase_amount: 26,
+            purchase_currency: 'CNY',
+            logistics_amount: null,
+            logistics_currency: null,
+            fx_rate: 13.0
+          }
+        ];
+
+        let inserted = 0;
+        for (const item of costsData) {
           try {
-            const r = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } });
-            if (!r.ok) return 0;
-            const j = await r.json().catch(() => ({} as any));
-            return typeof j?.inserted === 'number' ? j.inserted : 0;
-          } catch { return false; }
-        };
-        const ins1 = await tryCall('/api/fill-costs?auto=1');
-        const inserted = ins1 > 0 ? ins1 : await tryCall('/stock-calculator/api/fill-costs?auto=1');
+            const { error } = await supabase
+              .from('wb_costs')
+              .upsert(item, { onConflict: 'user_id,date,sku' });
+            if (!error) inserted++;
+          } catch (e) {
+            console.warn('Cost insert error for SKU', item.sku, e);
+          }
+        }
+
         try { window.localStorage.setItem('costsFill:last', new Date().toISOString()); } catch {}
-        if (inserted > 0) window.location.reload();
+        if (inserted > 0) {
+          console.log(`Заполнено ${inserted} записей wb_costs`);
+          window.location.reload();
+        }
       } catch {}
     })();
   }, [products]);
