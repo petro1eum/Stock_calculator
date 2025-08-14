@@ -160,6 +160,32 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
     return sum || product.revenue || 0;
   }, [product]);
 
+  // Консистентный расчет продаж и выручки за периоды из истории продаж (если есть)
+  const periodStats = React.useMemo(() => {
+    const fallback = { units30d: product?.sales30d || 0, revenue30d: product?.revenue30d || 0, units12m: product?.sales12m || 0, revenue12m: product?.revenue12m || 0 };
+    if (!product) return fallback;
+    const sales = (product as any)?.salesHistory as Array<{ date: string; units?: number; revenue?: number }>|undefined;
+    if (!sales || sales.length === 0) return fallback;
+    const now = new Date();
+    const msDay = 24 * 60 * 60 * 1000;
+    const start30d = now.getTime() - 30 * msDay;
+    const start12m = now.getTime() - 365 * msDay;
+    let u30 = 0, r30 = 0, u12 = 0, r12 = 0;
+    for (const s of sales) {
+      const t = new Date(s.date).getTime();
+      if (isNaN(t)) continue;
+      if (t >= start12m && t <= now.getTime()) {
+        u12 += Math.max(0, Number((s as any).units || 0));
+        if (typeof s.revenue === 'number') r12 += s.revenue;
+      }
+      if (t >= start30d && t <= now.getTime()) {
+        u30 += Math.max(0, Number((s as any).units || 0));
+        if (typeof s.revenue === 'number') r30 += s.revenue;
+      }
+    }
+    return { units30d: u30, revenue30d: r30, units12m: u12, revenue12m: r12 };
+  }, [product]);
+
   if (!product) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -248,13 +274,13 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           </div>
           <div className="bg-gray-100 p-3 rounded">
             <div className="text-sm text-gray-500">Продажи 30 дней</div>
-            <div className="text-lg font-bold">{fmt(product.sales30d || 0)} шт</div>
-            <div className="text-xs text-gray-500">Выручка: ₽{fmtRub(product.revenue30d || 0)}</div>
+            <div className="text-lg font-bold">{fmt(periodStats.units30d)} шт</div>
+            <div className="text-xs text-gray-500">Выручка: ₽{fmtRub(periodStats.revenue30d)}</div>
           </div>
           <div className="bg-gray-100 p-3 rounded">
             <div className="text-sm text-gray-500">Продажи 12 мес</div>
-            <div className="text-lg font-bold">{fmt(product.sales12m || 0)} шт</div>
-            <div className="text-xs text-gray-500">Выручка: ₽{fmtRub(product.revenue12m || 0)}</div>
+            <div className="text-lg font-bold">{fmt(periodStats.units12m)} шт</div>
+            <div className="text-xs text-gray-500">Выручка: ₽{fmtRub(periodStats.revenue12m)}</div>
           </div>
         </div>
 
