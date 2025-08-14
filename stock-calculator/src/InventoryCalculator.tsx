@@ -39,6 +39,7 @@ import {
 import { updateProductsFromSales, updateProductsFromSalesAndStocks } from "./utils/inventoryCalculations";
 import { calculateAdjustedLeadTime, calculateHistoricalLeadTime, calculateLandedCost } from "./utils/logisticsCalculations";
 import { supabase } from "./utils/supabaseClient";
+import { fetchCbrRateToRub } from "./utils/fx";
 
 const InventoryOptionCalculator = () => {
   /* ----- входные значения ----- */
@@ -689,11 +690,42 @@ const InventoryOptionCalculator = () => {
             });
           }
 
-          // Пересчитаем маржу как (розничная цена - себестоимость), если обе известны
+          // Подтянем затраты по SKU из wb_costs (самые свежие) и обновим purchase
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              const { data: costs } = await supabase
+                .from('wb_costs')
+                .select('date, sku, purchase_amount, purchase_currency, logistics_amount, logistics_currency, fx_rate')
+                .eq('user_id', user.id)
+                .order('date', { ascending: true })
+                .limit(100000);
+              const latestBySku = new Map<string, any>();
+              (costs || []).forEach((r: any) => { latestBySku.set(String(r.sku), r); });
+              initialProducts = await Promise.all(initialProducts.map(async (p) => {
+                const c = latestBySku.get(p.sku);
+                if (!c) return p;
+                const dateISO = c.date || new Date().toISOString();
+                const purchCur = (c.purchase_currency || 'RUB').toUpperCase();
+                const logCur = (c.logistics_currency || purchCur).toUpperCase();
+                let fxPurch = typeof c.fx_rate === 'number' ? c.fx_rate : null;
+                if (!fxPurch && purchCur !== 'RUB') fxPurch = await fetchCbrRateToRub(purchCur, dateISO) || null;
+                const purchRub = typeof c.purchase_amount === 'number' ? (purchCur === 'RUB' ? c.purchase_amount : (fxPurch ? c.purchase_amount * fxPurch : null)) : null;
+                let fxLog = purchCur === logCur ? fxPurch : null;
+                if (!fxLog && logCur !== 'RUB') fxLog = await fetchCbrRateToRub(logCur, dateISO) || null;
+                const logRub = typeof c.logistics_amount === 'number' ? (logCur === 'RUB' ? c.logistics_amount : (fxLog ? c.logistics_amount * fxLog : null)) : null;
+                const newPurchase = (typeof purchRub === 'number' ? purchRub : p.purchase) + (typeof logRub === 'number' ? logRub : 0);
+                const hasRetail = typeof p.retailPrice === 'number' && p.retailPrice! > 0;
+                const margin = hasRetail ? Math.max(0, Number(p.retailPrice) - Number(newPurchase)) : p.margin;
+                return { ...p, purchase: newPurchase, margin };
+              }));
+            }
+          } catch {}
+          // Пересчитаем маржу как (розничная цена - себестоимость), если обе известны (fallback)
           initialProducts = initialProducts.map(p => {
             const hasRetail = typeof p.retailPrice === 'number' && p.retailPrice! > 0;
             const hasPurchase = typeof p.purchase === 'number' && p.purchase! > 0;
-            const m = hasRetail && hasPurchase ? Math.max(0, Number(p.retailPrice) - Number(p.purchase)) : 0;
+            const m = hasRetail && hasPurchase ? Math.max(0, Number(p.retailPrice) - Number(p.purchase)) : p.margin;
             return { ...p, margin: m };
           });
           // анализ продаж уже учтен при пересчете, но отдельно посчитаем 30д если есть sales в БД
