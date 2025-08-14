@@ -454,8 +454,8 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Название</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Категория</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Закуп, $</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Маржа, $</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Закуп, ₽</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Маржа, ₽</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Спрос нед.</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Текущий запас</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Оптим. q*</th>
@@ -470,8 +470,8 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.sku}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.category || ''}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.purchase.toFixed(2)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.margin.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₽{new Intl.NumberFormat('ru-RU').format(Math.round(product.purchase || 0))}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₽{new Intl.NumberFormat('ru-RU').format(Math.round(product.margin || 0))}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {product.muWeek.toFixed(0)} ± {product.sigmaWeek.toFixed(0)}
                     </td>
@@ -489,7 +489,7 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.safety}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <span className={product.optValue > 0 ? 'text-green-600' : 'text-red-600'}>
-                        ${product.optValue.toFixed(0)}
+                        ₽{new Intl.NumberFormat('ru-RU').format(Math.round(product.optValue || 0))}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
