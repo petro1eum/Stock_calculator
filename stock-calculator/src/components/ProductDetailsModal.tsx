@@ -115,7 +115,57 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
         }
       }
 
-      // Prices by sizes: читаем из БД (предварительно нужно выполнить импорт цен через импортёр)
+      // Sales (последние 30 дней) — прямой WB + сохранение в БД
+      const salesDateFrom = `${since.toISOString().split('T')[0]}T00:00:00`;
+      const directUrlSales = `https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${salesDateFrom}`;
+      const wbSalesResp = await fetch(directUrlSales, { headers: { Authorization: key, Accept: 'application/json' } });
+      if (wbSalesResp.ok) {
+        const wbSalesJson: any = await wbSalesResp.json();
+        const salesList: any[] = Array.isArray(wbSalesJson) ? wbSalesJson : (wbSalesJson?.sales || []);
+        const skuSales = (salesList || []).filter((r: any) => String(r.nmId ?? r.nmid) === skuStr);
+        if (user && skuSales.length > 0) {
+          const saleRows = skuSales.map((s: any) => ({
+            user_id: user.id,
+            date: toIsoDateOrNull(s.date) || `${salesDateFrom}`,
+            sku: skuStr,
+            units: Number(s.quantity || 0),
+            revenue: s.totalPrice !== undefined ? Number(s.totalPrice) : null,
+            sale_id: String(s.saleID || s.gNumber || s.srid || `${skuStr}-${s.date}-${s.barcode || ''}`),
+            warehouse: s.warehouseName || null,
+            raw: s
+          }));
+          await supabase
+            .from('wb_sales')
+            .upsert(saleRows as any, { onConflict: 'user_id,sale_id' as any, ignoreDuplicates: true as any });
+        }
+      }
+
+      // Prices by sizes — прямой WB + сохранение в БД
+      const directUrlPrices = `https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter?limit=1000`;
+      try {
+        const wbPricesResp = await fetch(directUrlPrices, { headers: { Authorization: key, Accept: 'application/json' } });
+        if (wbPricesResp.ok) {
+          const pricesJson = await wbPricesResp.json();
+          const list = pricesJson?.data?.listGoods || pricesJson?.listGoods || [];
+          const match = (list as any[]).find((g: any) => String(g.nmID ?? g.nmId ?? g.nmid) === skuStr);
+          const sizes = match ? (match.sizes || []) : [];
+          if (user && sizes.length > 0) {
+            const priceRows = sizes.map((s: any) => ({
+              user_id: user.id,
+              nm_id: skuStr,
+              size_id: String(s.sizeID ?? s.sizeId ?? s.id),
+              currency: match.currencyIsoCode4217 || null,
+              price: typeof s.price === 'number' ? s.price : null,
+              discounted_price: typeof s.discountedPrice === 'number' ? s.discountedPrice : null,
+              discount: typeof match.discount === 'number' ? match.discount : (typeof match.clubDiscount === 'number' ? match.clubDiscount : null),
+              raw: { ...match, size: s }
+            }));
+            await supabase
+              .from('wb_prices')
+              .upsert(priceRows as any, { onConflict: 'user_id,nm_id,size_id' as any, ignoreDuplicates: true as any });
+          }
+        }
+      } catch {}
 
       // Update local state from latest DB snapshot for stocks as well
       if (user) {
@@ -152,6 +202,25 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
             discountedPrice: r.discounted_price,
             discount: r.discount,
             techSizeName: r.raw?.size?.techSizeName
+          })));
+        }
+        // Read sales 30d from DB for display
+        const salesSince = new Date(); salesSince.setDate(salesSince.getDate() - 30);
+        const salesCut = salesSince.toISOString().split('T')[0];
+        const { data: dbSales } = await supabase
+          .from('wb_sales')
+          .select('date, sku, units, revenue, warehouse')
+          .eq('user_id', user.id)
+          .eq('sku', skuStr)
+          .gte('date', `${salesCut}T00:00:00Z`)
+          .limit(10000);
+        if (dbSales && dbSales.length > 0) {
+          setSales30d(dbSales.map((r: any) => ({
+            date: (r.date || '').split('T')[0],
+            nmId: skuStr,
+            quantity: Number(r.units || 0),
+            totalPrice: typeof r.revenue === 'number' ? r.revenue : undefined,
+            warehouseName: r.warehouse || undefined
           })));
         }
       }
