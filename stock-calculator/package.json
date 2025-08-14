@@ -30,6 +30,8 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
+    "e2e:init": "npx playwright install --with-deps",
+    "e2e": "playwright test",
     "db:setup": "echo 'Скопируйте содержимое supabase/schema.sql в Supabase SQL Editor и выполните'"
   },
   "eslintConfig": {
@@ -54,6 +56,7 @@
     "@babel/preset-env": "^7.27.2",
     "@babel/preset-react": "^7.27.1",
     "@babel/preset-typescript": "^7.27.1",
+    "@playwright/test": "^1.54.2",
     "@types/node": "^24.2.1",
     "@vercel/node": "^5.3.11",
     "autoprefixer": "^10.4.21",

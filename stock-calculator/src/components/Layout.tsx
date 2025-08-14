@@ -129,6 +129,7 @@ const Layout: React.FC<LayoutProps> = ({
                   whileTap={!isDisabled ? { scale: 0.98 } : {}}
                   onClick={() => !isDisabled && onTabChange(item.id)}
                   disabled={isDisabled}
+                  data-testid={`nav-${item.id}`}
                   className={`
                     w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-colors
                     ${isActive 

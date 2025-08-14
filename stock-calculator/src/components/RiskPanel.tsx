@@ -176,20 +176,20 @@ const RiskPanel: React.FC<RiskPanelProps> = ({ products, confidence = 0.95, look
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   return (
-    <div className="bg-gray-900 text-gray-100 rounded-2xl p-6">
+    <div className="bg-gray-900 text-gray-100 rounded-2xl p-6" data-testid="risk-panel">
       <div className="flex items-center justify-between mb-4">
         <div className="text-lg font-semibold">RISK ({Math.round(confidence * 100)}%)</div>
         <div className="text-sm text-gray-400">{timeStr}</div>
       </div>
       <div className="grid grid-cols-2 gap-y-3">
         <div className="text-gray-300">VaR:</div>
-        <div className="text-right">{isFinite(riskNumbers.VaR) && riskNumbers.VaR > 0 ? `$${fmt(riskNumbers.VaR)}` : '—'}</div>
+        <div className="text-right">{isFinite(riskNumbers.VaR) && riskNumbers.VaR > 0 ? `₽${fmt(riskNumbers.VaR)}` : '—'}</div>
         <div className="text-gray-300">ES:</div>
-        <div className="text-right">{isFinite(riskNumbers.ES) && riskNumbers.ES > 0 ? `$${fmt(riskNumbers.ES)}` : '—'}</div>
+        <div className="text-right">{isFinite(riskNumbers.ES) && riskNumbers.ES > 0 ? `₽${fmt(riskNumbers.ES)}` : '—'}</div>
         <div className="text-gray-300">σ (1-bar):</div>
-        <div className="text-right">{isFinite(riskNumbers.sigma) && riskNumbers.sigma > 0 ? `$${fmt(riskNumbers.sigma)}` : '—'}</div>
+        <div className="text-right">{isFinite(riskNumbers.sigma) && riskNumbers.sigma > 0 ? `₽${fmt(riskNumbers.sigma)}` : '—'}</div>
         <div className="text-gray-300">μ (1-bar):</div>
-        <div className="text-right">{isFinite(riskNumbers.mu) && riskNumbers.mu > 0 ? `$${fmt(riskNumbers.mu)}` : '—'}</div>
+        <div className="text-right">{isFinite(riskNumbers.mu) && riskNumbers.mu > 0 ? `₽${fmt(riskNumbers.mu)}` : '—'}</div>
       </div>
       {weeklyRevenue.length > 0 && (!scenarios || scenarios.length === 0) && (
         <div className="mt-3 text-xs text-gray-400">Источник: фактическая выручка за {lookbackWeeks} недель</div>
