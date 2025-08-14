@@ -39,7 +39,9 @@ export class PortfolioOptimizer {
     private hold: number,
     private r: number,
     private weeks: number,
-    private monteCarloParams: any
+    private monteCarloParams: any,
+    // Опционально: ковариации/корреляции из ProbStates. Формат: productId -> (productId -> rho)
+    private probStatesCorrById?: Map<number, Map<number, number>>
   ) {}
 
   // Построение недельных рядов выручки (₽) для каждого товара, для оценки ковариаций
@@ -371,7 +373,42 @@ export class PortfolioOptimizer {
       weightById.set(id, (weightById.get(id)! / totalInvestment));
     });
     
-    // Синтез портфельного ряда
+    // Если есть ProbStates корреляции — используем ковариационную формулу для std портфеля
+    if (this.probStatesCorrById && this.probStatesCorrById.size > 0) {
+      // Соберем μ_i и σ_i для каждого id
+      const ids = Array.from(weightById.keys());
+      if (ids.length === 0) return 0;
+      const meanById = new Map<number, number>();
+      const stdById = new Map<number, number>();
+      ids.forEach(id => {
+        const s = seriesByProduct.get(id) || [];
+        const n = s.length || 0;
+        const mu = n > 0 ? s.reduce((a, b) => a + b, 0) / n : 0;
+        const var_ = n > 1 ? s.reduce((a, b) => a + (b - mu) ** 2, 0) / (n - 1) : 0;
+        meanById.set(id, mu);
+        stdById.set(id, Math.sqrt(Math.max(0, var_)));
+      });
+      // Средняя портфельная выручка
+      const meanPort = ids.reduce((acc, id) => acc + (weightById.get(id)! * (meanById.get(id) || 0)), 0);
+      if (meanPort <= 0) return 0;
+      // Дисперсия портфеля по матрице корреляций
+      let varPort = 0;
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = 0; j < ids.length; j++) {
+          const idI = ids[i], idJ = ids[j];
+          const wi = weightById.get(idI)!;
+          const wj = weightById.get(idJ)!;
+          const si = stdById.get(idI) || 0;
+          const sj = stdById.get(idJ) || 0;
+          const rho = this.probStatesCorrById.get(idI)?.get(idJ) ?? (i === j ? 1 : 0);
+          varPort += wi * wj * rho * si * sj;
+        }
+      }
+      const stdPort = Math.sqrt(Math.max(0, varPort));
+      return stdPort / meanPort;
+    }
+
+    // Синтез портфельного ряда (исторический метод)
     const portfolio: number[] = Array(lookbackWeeks).fill(0);
     weightById.forEach((w, id) => {
       const s = seriesByProduct.get(id);
@@ -386,7 +423,6 @@ export class PortfolioOptimizer {
     if (mean <= 0) return 0;
     const variance = n > 1 ? portfolio.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1) : 0;
     const std = Math.sqrt(variance);
-    // Коэффициент вариации как относительный риск
     return std / mean;
   }
   
