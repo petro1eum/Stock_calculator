@@ -68,6 +68,9 @@ create table if not exists public.wb_stocks (
   inserted_at timestamptz not null default now(),
   primary key (user_id, sku, barcode, date)
 );
+-- Дополнительный уникальный индекс для warehouse в составном ключе upsert
+create unique index if not exists wb_stocks_user_sku_barcode_wh_date
+  on public.wb_stocks (user_id, sku, barcode, warehouse, date);
 create index if not exists wb_stocks_user_sku_idx on public.wb_stocks (user_id, sku);
 alter table public.wb_stocks enable row level security;
 do $$ begin

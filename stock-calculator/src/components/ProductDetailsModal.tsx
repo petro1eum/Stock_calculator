@@ -102,7 +102,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
               quantity: Number(r.quantity || 0),
               in_way_to_client: Number(r.inWayToClient || 0),
               in_way_from_client: Number(r.inWayFromClient || 0),
-              warehouse: r.warehouseName || null,
+              warehouse: (r.warehouseName && String(r.warehouseName).trim()) ? String(r.warehouseName).trim() : 'UNKNOWN',
               price: r.Price !== undefined ? Number(r.Price) : null,
               discount: r.Discount !== undefined ? Number(r.Discount) : null,
               raw: r
@@ -110,10 +110,10 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
           })
           .filter((row: any) => Boolean(row.date && row.sku));
         if (rows.length > 0) {
-          // В схеме PK: (user_id, sku, barcode, date). onConflict должен соответствовать
+          // Используем уникальный индекс (user_id,sku,barcode,warehouse,date)
           await supabase
             .from('wb_stocks')
-            .upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any, ignoreDuplicates: true as any });
+            .upsert(rows as any, { onConflict: 'user_id,sku,barcode,warehouse,date' as any, ignoreDuplicates: true as any });
         }
       }
 
