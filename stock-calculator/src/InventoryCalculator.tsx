@@ -36,7 +36,7 @@ import {
   getAverageSeasonalDemand,
   optimizeQuantity
 } from "./utils/inventoryCalculations";
-import { updateProductsFromSales } from "./utils/inventoryCalculations";
+import { updateProductsFromSales, updateProductsFromSalesAndStocks } from "./utils/inventoryCalculations";
 import { calculateAdjustedLeadTime, calculateHistoricalLeadTime, calculateLandedCost } from "./utils/logisticsCalculations";
 import { supabase } from "./utils/supabaseClient";
 
@@ -498,6 +498,7 @@ const InventoryOptionCalculator = () => {
         if (stocksErr) return;
 
         const totals = new Map<string, number>();
+        const stockHistory: Array<{ sku: string; date: string; quantity: number }> = [];
         const subjBySku = new Map<string, string>();
         const nameBySku = new Map<string, string>();
         let priceSnapshot: Map<string, { price?: number; discounted?: number; discount?: number; vendor?: string }> | null = null;
@@ -506,13 +507,14 @@ const InventoryOptionCalculator = () => {
           const sku = String(r.sku);
           const qty = Number(r.quantity || 0);
           const ts = new Date(r.date).getTime() || 0;
+          stockHistory.push({ sku, date: (r.date || '').split('T')[0] + 'T00:00:00Z', quantity: qty });
           const subj = typeof r.raw?.subject === 'string' ? r.raw.subject : undefined;
           // Название берем строго из vendorCode / supplierArticle. Никаких raw.name
           const name = typeof r.raw?.vendorCode === 'string' ? r.raw.vendorCode
                        : (typeof r.raw?.supplierArticle === 'string' ? r.raw.supplierArticle : undefined);
           if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
           if (name && !nameBySku.has(sku)) nameBySku.set(sku, name);
-          const wh = r.warehouse || r.raw?.warehouseName || 'Склад WB';
+          const wh = (r.warehouse || r.raw?.warehouseName || 'Склад WB').toString();
           if (!byWarehouseLatest.has(sku)) byWarehouseLatest.set(sku, new Map());
           const m = byWarehouseLatest.get(sku)!;
           const prev = m.get(wh);
@@ -527,6 +529,21 @@ const InventoryOptionCalculator = () => {
           m.forEach(v => { sum += v.qty; });
           totals.set(sku, sum);
         });
+
+        // DEBUG: проверка остатков по конкретному SKU
+        try {
+          const debugSku = '202342304';
+          if (byWarehouseLatest.has(debugSku)) {
+            const m = byWarehouseLatest.get(debugSku)!;
+            const rows: any[] = [];
+            m.forEach((v, wh) => rows.push({ warehouse: wh, qty: v.qty, ts: new Date(v.date).toISOString() }));
+            const total = rows.reduce((s, r) => s + (r.qty || 0), 0);
+            // eslint-disable-next-line no-console
+            console.table(rows);
+            // eslint-disable-next-line no-console
+            console.log(`WB stocks debug for ${debugSku} total=${total}`);
+          }
+        } catch {}
 
         const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
         let initialProducts: Product[] = Array.from(totals.keys()).map((sku, idx) => ({
@@ -615,7 +632,11 @@ const InventoryOptionCalculator = () => {
             if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
             if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
           });
-          initialProducts = updateProductsFromSales(initialProducts, salesRecords, { weeksWindow: 26 });
+          if (stockHistory.length > 0) {
+            initialProducts = updateProductsFromSalesAndStocks(initialProducts, salesRecords, stockHistory as any, { weeksWindow: 26 });
+          } else {
+            initialProducts = updateProductsFromSales(initialProducts, salesRecords, { weeksWindow: 26 });
+          }
         }
 
         // Применим цены и краткий анализ продаж (30 дней)
@@ -988,6 +1009,8 @@ const InventoryOptionCalculator = () => {
             selectedProductId={selectedProductId}
             onNavigate={setActiveTab}
             calcMethodUsed={calcMethodUsed}
+            scenarios={scenarios}
+            riskConfidence={monteCarloParams.confidenceLevel}
           />
         )}
         

@@ -117,6 +117,12 @@ export interface LogisticsRecord {
   exchangeRateToRUB?: number;
 }
 
+export interface StockRecord {
+  date: string; // ISO дата (день)
+  sku: string;
+  quantity: number; // суммарный остаток (по всем складам) на дату
+}
+
 export interface ProductForm {
   name: string;
   sku: string;

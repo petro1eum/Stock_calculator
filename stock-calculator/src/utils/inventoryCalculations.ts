@@ -1,5 +1,5 @@
 import { normalCDF } from './mathFunctions';
-import { SeasonalityData, VolumeDiscount, MonteCarloParams, SalesRecord, PurchaseRecord, LogisticsRecord } from '../types';
+import { SeasonalityData, VolumeDiscount, MonteCarloParams, SalesRecord, PurchaseRecord, LogisticsRecord, StockRecord } from '../types';
 import { blackScholesCall } from './mathFunctions';
 
 // Monte-Carlo ожидание lost-sales при запасе q
@@ -333,6 +333,91 @@ export const computeWeeklyStatsForSeries = (
   const variance = n > 1 ? buckets.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1) : 0;
   const sigma = Math.sqrt(variance);
   return { muWeek: mean, sigmaWeek: sigma, totalUnits: sum, totalRevenue: totalRevenue || undefined };
+};
+
+// Оценка спроса с учетом out-of-stock: если неделя была полностью без стока, не считаем ее как нулевую продажу;
+// если частично, масштабируем продажи на долю наличия.
+export const computeWeeklyStatsAdjustedForStockouts = (
+  sales: SalesRecord[],
+  stocks: StockRecord[],
+  endDate: Date = new Date(),
+  weeksWindow: number = 26
+): { muWeek: number; sigmaWeek: number; totalUnits: number } => {
+  if (weeksWindow <= 0) return { muWeek: 0, sigmaWeek: 0, totalUnits: 0 };
+  const msInWeek = 7 * 24 * 60 * 60 * 1000;
+  const startMs = endDate.getTime() - weeksWindow * msInWeek;
+
+  // Продажи по неделям
+  const salesBuckets: number[] = Array(weeksWindow).fill(0);
+  for (const rec of sales) {
+    const t = new Date(rec.date).getTime();
+    if (isNaN(t) || t < startMs || t > endDate.getTime()) continue;
+    const idx = Math.min(weeksWindow - 1, Math.floor((t - startMs) / msInWeek));
+    salesBuckets[idx] += Math.max(0, rec.units || 0);
+  }
+
+  // Доля наличия по неделям (0..1) — по дневным снапшотам складских остатков
+  const availBuckets: number[] = Array(weeksWindow).fill(0);
+  const daysCount: number[] = Array(weeksWindow).fill(0);
+  for (const st of stocks) {
+    const t = new Date(st.date).getTime();
+    if (isNaN(t) || t < startMs || t > endDate.getTime()) continue;
+    const idx = Math.min(weeksWindow - 1, Math.floor((t - startMs) / msInWeek));
+    availBuckets[idx] += (st.quantity || 0) > 0 ? 1 : 0; // день в наличии
+    daysCount[idx] += 1;
+  }
+  const availability: number[] = availBuckets.map((n, i) => {
+    const denom = daysCount[i] || 0;
+    return denom > 0 ? Math.min(1, Math.max(0, n / denom)) : 1; // если нет данных по стоку — считаем доступным
+  });
+
+  // Скорректированный спрос: if availability ~ a, ожидаемый спрос ≈ sales / max(a, eps)
+  const adj: number[] = salesBuckets.map((s, i) => {
+    const a = Math.max(0.05, availability[i]);
+    // Если неделя без данных по стоку и без продаж — не искажаем (оставим 0)
+    if (daysCount[i] === 0) return s;
+    return s / a;
+  });
+
+  // Исключаем недели с отсутствием стока целиком и отсутствием продаж из оценки дисперсии
+  const filtered = adj.filter((v, i) => !(availability[i] === 0 && salesBuckets[i] === 0));
+  if (filtered.length === 0) return { muWeek: 0, sigmaWeek: 0, totalUnits: 0 };
+
+  const n = filtered.length;
+  const mean = filtered.reduce((a, b) => a + b, 0) / n;
+  const variance = n > 1 ? filtered.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1) : 0;
+  const sigma = Math.sqrt(variance);
+  return { muWeek: mean, sigmaWeek: sigma, totalUnits: salesBuckets.reduce((a, b) => a + b, 0) };
+};
+
+// Массовое обновление μ/σ по продажам и остаткам (если есть)
+export const updateProductsFromSalesAndStocks = (
+  products: Array<{ sku: string } & any>,
+  sales: SalesRecord[],
+  stocks: StockRecord[],
+  options?: { weeksWindow?: number }
+) => {
+  const weeksWindow = options?.weeksWindow ?? 26;
+  const groupedSales = groupSalesBySKU(sales);
+  const groupedStocks = (() => {
+    const m = new Map<string, StockRecord[]>();
+    for (const r of stocks) {
+      const sku = r.sku;
+      const arr = m.get(sku) || [];
+      arr.push(r);
+      m.set(sku, arr);
+    }
+    return m;
+  })();
+
+  const endDate = new Date();
+  return products.map(prod => {
+    const sSeries = groupedSales.get(prod.sku) || [];
+    const kSeries = groupedStocks.get(prod.sku) || [];
+    if (sSeries.length === 0) return prod;
+    const stats = computeWeeklyStatsAdjustedForStockouts(sSeries, kSeries, endDate, weeksWindow);
+    return { ...prod, muWeek: stats.muWeek, sigmaWeek: stats.sigmaWeek, salesHistory: sSeries };
+  });
 };
 
 // Обновление списка товаров на основе истории продаж: пересчитываем muWeek и sigmaWeek (по SKU)

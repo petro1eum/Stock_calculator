@@ -11,8 +11,9 @@ import {
 } from '@heroicons/react/24/outline';
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
-import { Product, ProductWithCategory } from '../types';
+import { Product, ProductWithCategory, Scenario } from '../types';
 import ChartComponent from './ChartComponent';
+import RiskPanel from './RiskPanel';
 
 interface DashboardProps {
   products: Product[];
@@ -29,6 +30,8 @@ interface DashboardProps {
   selectedProductId: number | null;
   onNavigate: (tab: string) => void;
   calcMethodUsed?: 'closed' | 'mc';
+  scenarios?: Scenario[];
+  riskConfidence?: number;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -39,7 +42,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   series,
   selectedProductId,
   onNavigate,
-  calcMethodUsed
+  calcMethodUsed,
+  scenarios,
+  riskConfidence
 }) => {
   const totalInvestment = products.reduce((sum, p) => sum + p.optQ * p.purchase, 0);
   const avgROI = totalInvestment > 0 ? (totalOptionValue / totalInvestment) * 100 : 0;
@@ -236,6 +241,16 @@ const Dashboard: React.FC<DashboardProps> = ({
             ))}
           </div>
         </motion.div>
+      </motion.div>
+
+      {/* Risk Panel */}
+      <motion.div variants={itemVariants}>
+        <RiskPanel 
+          products={products} 
+          confidence={typeof riskConfidence === 'number' ? riskConfidence : 0.95} 
+          lookbackWeeks={26} 
+          scenarios={scenarios}
+        />
       </motion.div>
 
       {/* Quick Actions */}

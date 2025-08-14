@@ -245,9 +245,10 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
 
         if (rows.length === 0) return;
 
+        // ВАЖНО: в конфликт-ключ добавлен warehouse, иначе строки из разных складов затирают друг друга
         await supabase
           .from('wb_stocks')
-          .upsert(rows as any, { onConflict: 'user_id,sku,barcode,date' as any, ignoreDuplicates: true as any });
+          .upsert(rows as any, { onConflict: 'user_id,sku,barcode,warehouse,date' as any, ignoreDuplicates: true as any });
         return;
       }
 

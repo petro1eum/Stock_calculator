@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Product, ProductForm } from '../types';
+import ProductDetailsModal from './ProductDetailsModal';
 
 interface AssortmentTabProps {
   products: Product[];
@@ -33,6 +34,7 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
   const [newDiscount, setNewDiscount] = useState({ qty: 0, discount: 0 });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [detailsProduct, setDetailsProduct] = useState<Product | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
   const start = (page - 1) * pageSize;
@@ -464,7 +466,7 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {pageItems.map((product) => (
-                  <tr key={product.id} className="hover:bg-gray-50">
+                  <tr key={product.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setDetailsProduct(product)}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.sku}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.category || ''}</td>
@@ -555,6 +557,10 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
             Добавьте товары вручную или загрузите демо-данные для начала работы
           </p>
         </div>
+      )}
+
+      {detailsProduct && (
+        <ProductDetailsModal product={detailsProduct} onClose={() => setDetailsProduct(null)} />
       )}
     </div>
   );
