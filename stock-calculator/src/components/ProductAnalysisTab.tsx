@@ -144,6 +144,22 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
     };
   }, [product]);
 
+  const annualRevenueRub = React.useMemo(() => {
+    if (!product) return 0;
+    const sales = (product as any)?.salesHistory as Array<{ date: string; revenue?: number }> | undefined;
+    if (!sales || sales.length === 0) return product.revenue || 0;
+    const now = new Date();
+    const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    let sum = 0;
+    for (const s of sales) {
+      const t = new Date(s.date).getTime();
+      if (!isNaN(t) && t >= oneYearAgo.getTime() && t <= now.getTime()) {
+        if (typeof s.revenue === 'number') sum += s.revenue;
+      }
+    }
+    return sum || product.revenue || 0;
+  }, [product]);
+
   if (!product) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -161,20 +177,6 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
   const badgeColor = product.optQ < product.safety && product.optValue > 0 ? "bg-yellow-500 text-white" : product.optValue > 0 ? "bg-green-500 text-white" : "bg-red-500 text-white";
   const frozenCapital = product.optQ * product.purchase;
   const fmt = formatNumber;
-  const annualRevenueRub = React.useMemo(() => {
-    const sales = (product as any)?.salesHistory as Array<{ date: string; revenue?: number }> | undefined;
-    if (!sales || sales.length === 0) return product.revenue || 0;
-    const now = new Date();
-    const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-    let sum = 0;
-    for (const s of sales) {
-      const t = new Date(s.date).getTime();
-      if (!isNaN(t) && t >= oneYearAgo.getTime() && t <= now.getTime()) {
-        if (typeof s.revenue === 'number') sum += s.revenue;
-      }
-    }
-    return sum || product.revenue || 0;
-  }, [product]);
 
   return (
     <div className="bg-white rounded-lg shadow-md p-4">
