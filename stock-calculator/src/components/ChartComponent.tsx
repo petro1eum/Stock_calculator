@@ -75,7 +75,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="qty" />
               <YAxis />
-              <Tooltip formatter={(value: number) => `$${fmt(value)}`} />
+              <Tooltip formatter={(value: number) => `₽${fmt(value)}`} />
               <Legend />
               <Line type="monotone" dataKey="optionValue" stroke="#8b5cf6" name="Ценность опциона" strokeWidth={2} />
               <Line type="monotone" dataKey="profit" stroke="#10b981" name="Прибыль" strokeDasharray="5 5" />
@@ -114,7 +114,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis type="number" />
             <YAxis dataKey="name" type="category" width={80} />
-            <Tooltip formatter={(value: number) => `$${fmt(value)}`} />
+            <Tooltip formatter={(value: number) => `₽${fmt(value)}`} />
             <Legend />
             <Bar dataKey="revenue" fill="#3b82f6" name="Выручка" />
             <Bar dataKey="profit" fill="#10b981" name="Прибыль" />

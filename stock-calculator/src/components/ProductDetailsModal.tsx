@@ -330,6 +330,8 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
     return acc;
   }, { units: 0, revenue: 0 });
 
+  const fmtRub = (n: number) => new Intl.NumberFormat('ru-RU').format(Math.round(n || 0));
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
@@ -361,12 +363,12 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
               </div>
               <div className="bg-gray-50 rounded p-3">
                 <div className="text-sm text-gray-500">Выручка за 30 дней</div>
-                <div className="text-2xl font-bold">${Math.round(salesAgg.revenue).toLocaleString()}</div>
+                <div className="text-2xl font-bold">₽{fmtRub(salesAgg.revenue)}</div>
               </div>
               <div className="bg-gray-50 rounded p-3">
                 <div className="text-sm text-gray-500">Актуальная цена</div>
                 <div className="text-2xl font-bold">
-                  {typeof latestPrice === 'number' ? `₽${Math.round(latestPrice).toLocaleString()}` : '—'}
+                  {typeof latestPrice === 'number' ? `₽${fmtRub(latestPrice)}` : '—'}
                   {typeof latestDiscount === 'number' && latestDiscount > 0 && (
                     <span className="text-sm text-gray-500 ml-2">(скидка {latestDiscount}%)</span>
                   )}
@@ -438,8 +440,8 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
                       {priceCards.map((s: any, i: number) => (
                         <tr key={i} className="border-t">
                           <td className="px-3 py-2">{s.techSizeName || s.sizeID || s.sizeId || s.id || '-'}</td>
-                          <td className="px-3 py-2 text-right">{typeof s.price === 'number' ? Math.round(s.price) : '-'}</td>
-                          <td className="px-3 py-2 text-right">{typeof s.discountedPrice === 'number' ? Math.round(s.discountedPrice) : '-'}</td>
+                          <td className="px-3 py-2 text-right">{typeof s.price === 'number' ? fmtRub(s.price) : '-'}</td>
+                          <td className="px-3 py-2 text-right">{typeof s.discountedPrice === 'number' ? fmtRub(s.discountedPrice) : '-'}</td>
                           <td className="px-3 py-2 text-right">{typeof s.discount === 'number' ? `${s.discount}%` : '-'}</td>
                         </tr>
                       ))}
