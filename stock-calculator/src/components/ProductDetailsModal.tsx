@@ -55,29 +55,27 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
     return null;
   };
 
-  const getWbKey = async (): Promise<string | null> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data } = await supabase.from('user_secrets').select('wb_api_key').eq('user_id', user.id).maybeSingle();
-    return (data?.wb_api_key as string) || null;
-  };
-
   const refreshFromWB = async () => {
     if (!product) return;
     try {
       setLoading(true);
       setError(null);
-      const key = await getWbKey();
-      if (!key) throw new Error('Нет WB API ключа. Сохраните его в настройках.');
 
       // Stocks (последние 30 дней)
       const since = new Date(); since.setDate(since.getDate() - 30);
       const dateParam = isoDateParam(since);
-      const stocksUrl = `https://statistics-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${dateParam}`;
-      const stocksResp = await fetch(stocksUrl, { headers: { Authorization: key, Accept: 'application/json' } });
-      if (!stocksResp.ok) throw new Error(`WB stocks: ${stocksResp.status} ${stocksResp.statusText}`);
-      const stocksJson: any[] = await stocksResp.json();
-      const skuStocks = (stocksJson || []).filter((r: any) => String(r.nmId ?? r.nmid) === skuStr);
+      // Используем наш серверный API-роут, чтобы обойти CORS и скрыть ключ
+      const stocksResp = await fetch(`/api/wb-stocks?dateFrom=${dateParam.split('T')[0]}`);
+      const stocksRawText = await stocksResp.text();
+      if (!stocksResp.ok) {
+        throw new Error(`WB stocks API error: ${stocksResp.status} ${stocksResp.statusText}. ${stocksRawText.slice(0, 200)}`);
+      }
+      let stocksJsonParsed: any;
+      try { stocksJsonParsed = JSON.parse(stocksRawText); } catch {
+        throw new Error(`WB stocks API вернул не-JSON: ${stocksRawText.slice(0, 120)}`);
+      }
+      const stocksList: any[] = (stocksJsonParsed?.stocks || []) as any[];
+      const skuStocks = (stocksList || []).filter((r: any) => String(r.nmId ?? r.nmid) === skuStr);
 
       // Save to DB
       const { data: { user } } = await supabase.auth.getUser();
@@ -110,32 +108,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
         }
       }
 
-      // Prices by sizes (pull full list and filter by nmID)
-      const pricesUrl = `https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter?limit=1000`;
-      const pricesResp = await fetch(pricesUrl, { headers: { Authorization: key, Accept: 'application/json' } });
-      if (pricesResp.ok) {
-        const pricesJson = await pricesResp.json();
-        const list = pricesJson?.data?.listGoods || pricesJson?.listGoods || [];
-        const match = (list as any[]).find((g: any) => String(g.nmID ?? g.nmId ?? g.nmid) === skuStr);
-        const sizes = match ? (match.sizes || []) : [];
-        setPriceCards(sizes);
-        // save to DB
-        if (user && sizes.length > 0) {
-          const rows = sizes.map((s: any) => ({
-            user_id: user.id,
-            nm_id: skuStr,
-            size_id: String(s.sizeID ?? s.sizeId ?? s.id),
-            currency: match.currencyIsoCode4217 || null,
-            price: typeof s.price === 'number' ? s.price : null,
-            discounted_price: typeof s.discountedPrice === 'number' ? s.discountedPrice : null,
-            discount: typeof match.discount === 'number' ? match.discount : (typeof match.clubDiscount === 'number' ? match.clubDiscount : null),
-            raw: { ...match, size: s }
-          }));
-          await supabase
-            .from('wb_prices')
-            .upsert(rows as any, { onConflict: 'user_id,nm_id,size_id' as any, ignoreDuplicates: true as any });
-        }
-      }
+      // Prices by sizes: читаем из БД (предварительно нужно выполнить импорт цен через импортёр)
 
       // Update local state from latest DB snapshot for stocks as well
       if (user) {
@@ -158,6 +131,21 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
             discount: typeof r.discount === 'number' ? r.discount : undefined,
             techSize: r.tech_size || undefined,
             barcode: r.barcode || undefined
+          })));
+        }
+        const { data: dbPrices } = await supabase
+          .from('wb_prices')
+          .select('size_id, price, discounted_price, discount, raw')
+          .eq('user_id', user.id)
+          .eq('nm_id', skuStr)
+          .limit(10000);
+        if (dbPrices && dbPrices.length > 0) {
+          setPriceCards(dbPrices.map((r: any) => ({
+            sizeID: r.size_id,
+            price: r.price,
+            discountedPrice: r.discounted_price,
+            discount: r.discount,
+            techSizeName: r.raw?.size?.techSizeName
           })));
         }
       }
