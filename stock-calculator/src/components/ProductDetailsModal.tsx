@@ -385,14 +385,23 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
   if (!product) return null;
 
   // Группировка остатков по складам (берем последний снапшот по каждому складу)
+  // Плюс добавляем склады, встречающиеся в последних продажах, даже если в stocks их нет (показываем 0)
   const warehouses: Array<{ warehouse: string; qty: number; inWayToClient: number; inWayFromClient: number }>= (() => {
+    const normalize = (w?: string|null) => (w && String(w).trim()) ? String(w).trim() : 'UNKNOWN';
     const byWh = new Map<string, { ts: number; qty: number; inWayToClient: number; inWayFromClient: number }>();
     (stocks || []).forEach(s => {
       const ts = new Date(s.date).getTime() || 0;
-      const key = s.warehouse || 'Склад WB';
+      const key = normalize(s.warehouse);
       const cur = byWh.get(key);
       if (!cur || ts >= cur.ts) {
         byWh.set(key, { ts, qty: s.quantity || 0, inWayToClient: s.inWayToClient || 0, inWayFromClient: s.inWayFromClient || 0 });
+      }
+    });
+    // Подтянем склады из продаж 30д и инициализируем 0, если их не было в stocks
+    (sales30d || []).forEach(r => {
+      const key = normalize(r.warehouseName);
+      if (!byWh.has(key)) {
+        byWh.set(key, { ts: 0, qty: 0, inWayToClient: 0, inWayFromClient: 0 });
       }
     });
     return Array.from(byWh.entries()).map(([warehouse, v]) => ({ warehouse, qty: v.qty, inWayToClient: v.inWayToClient, inWayFromClient: v.inWayFromClient }));
