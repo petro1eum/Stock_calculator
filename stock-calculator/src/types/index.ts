@@ -53,6 +53,11 @@ export interface Product {
   // Поставки / логистика
   procurementCycleWeeks?: number; // средний цикл пополнения (по интервалам поставок)
   reorderPoint?: number; // точка заказа (ROP)
+  // Тестовые параметры импорта из Китая
+  importCnyPerUnit?: number; // цена закупки в юанях за единицу
+  importWeightKgPerBatch?: number; // вес партии в килограммах
+  importUnitsPerBatch?: number; // количество единиц в партии
+  importUsdPerKg?: number; // логистика $/кг
   // История продаж/закупок/логистики (опционально)
   salesHistory?: SalesRecord[];
   purchaseHistory?: PurchaseRecord[];

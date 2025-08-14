@@ -124,12 +124,13 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
 
   // Тестовый блок: оценка себестоимости для партии 1171 шт из Китая
   const testChinaBatch = React.useMemo(() => {
-    const qty = 1171;
-    const yuanPerUnit = 21; // 21 юань за единицу
-    const kgTotal = 382; // общий вес партии, кг (с обрешеткой)
-    const usdPerKg = 3; // логистика $/кг
-    const cnyToRub = 13; // грубая оценка курса, можно заменить на fetchCbrRateToRub('CNY', today)
-    const usdToRub = 90; // грубая оценка курса USD→RUB для логистики
+    if (!product) return null as any;
+    const qty = product.importUnitsPerBatch ?? 1171;
+    const yuanPerUnit = product.importCnyPerUnit ?? 21; // 21 юань за единицу
+    const kgTotal = product.importWeightKgPerBatch ?? 382; // общий вес партии, кг (с обрешеткой)
+    const usdPerKg = product.importUsdPerKg ?? 3; // логистика $/кг
+    const cnyToRub = (window as any)?.FX_CNY_RUB || 13; // временно из глобала/стора, ниже покажем актуальный
+    const usdToRub = (window as any)?.FX_USD_RUB || 90; // временно
     const unitCostRub = yuanPerUnit * cnyToRub; // себестоимость за единицу в рублях
     const logisticsRubTotal = kgTotal * usdPerKg * usdToRub; // логистика на всю партию в рублях
     const logisticsPerUnitRub = logisticsRubTotal / qty;
@@ -141,7 +142,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
       fullUnitCostRub,
       logisticsRubTotal
     };
-  }, []);
+  }, [product]);
 
   if (!product) {
     return (
@@ -179,15 +180,35 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
     <div className="bg-white rounded-lg shadow-md p-4">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-semibold">Анализ товара: {product.name} ({product.sku})</h3>
-        <button 
-          className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-          onClick={() => {
-            editProduct(product);
-            setActiveTab('assortment');
-          }}
-        >
-          Редактировать параметры
-        </button>
+        <div className="flex gap-2">
+          <button 
+            className="px-3 py-1 bg-gray-100 text-gray-700 rounded border hover:bg-gray-50"
+            onClick={async () => {
+              try {
+                const today = new Date().toISOString().split('T')[0];
+                const cnyRes = await fetch(`/api/db-load?table=fx_rates&limit=1`, { headers: { Authorization: 'Bearer dummy' } }).catch(() => null);
+                // Поскольку серверного токена нет в клиенте, просто дернем CBR напрямую
+                const cbrCny = await fetch(`https://www.cbr-xml-daily.ru/daily_json.js`).then(r => r.json()).catch(() => null);
+                const val = cbrCny?.Valute?.CNY;
+                const usd = cbrCny?.Valute?.USD;
+                if (val?.Value) (window as any).FX_CNY_RUB = val.Value / (val.Nominal || 1);
+                if (usd?.Value) (window as any).FX_USD_RUB = usd.Value / (usd.Nominal || 1);
+                toast.success('Курсы ЦБ обновлены для расчета тестовой партии');
+              } catch {}
+            }}
+          >
+            Обновить курсы ЦБ
+          </button>
+          <button 
+            className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+            onClick={() => {
+              editProduct(product);
+              setActiveTab('assortment');
+            }}
+          >
+            Редактировать параметры
+          </button>
+        </div>
       </div>
       
       {/* Основные характеристики товара */}
@@ -301,13 +322,15 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
               <div className="text-green-800">{product.currency || 'RUB'} / {product.supplier || 'Domestic'}</div>
             </div>
           </div>
+          {testChinaBatch && (
           <div className="mt-3 p-2 bg-white border rounded text-xs text-green-800">
             <div className="font-semibold mb-1">Тестовая партия из Китая (для оценки)</div>
             <div>Количество: {testChinaBatch.qty} шт</div>
-            <div>Себестоимость (21 юань/шт): ₽{fmtRub(testChinaBatch.unitCostRub)} за шт</div>
-            <div>Логистика (3 $/кг, 382 кг): всего ₽{fmtRub(testChinaBatch.logisticsRubTotal)} ≈ ₽{fmtRub(testChinaBatch.logisticsPerUnitRub)} за шт</div>
+            <div>Себестоимость ({product?.importCnyPerUnit ?? 21} юань/шт): ₽{fmtRub(testChinaBatch.unitCostRub)} за шт</div>
+            <div>Логистика ({product?.importUsdPerKg ?? 3} $/кг, {product?.importWeightKgPerBatch ?? 382} кг): всего ₽{fmtRub(testChinaBatch.logisticsRubTotal)} ≈ ₽{fmtRub(testChinaBatch.logisticsPerUnitRub)} за шт</div>
             <div className="font-medium">Итого ориентировочно: ₽{fmtRub(testChinaBatch.fullUnitCostRub)} за шт</div>
           </div>
+          )}
         </div>
       </div>
 
