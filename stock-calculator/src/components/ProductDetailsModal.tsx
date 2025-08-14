@@ -35,6 +35,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
   const [sales30d, setSales30d] = React.useState<SalesApiRecord[]>([]);
   const [priceCards, setPriceCards] = React.useState<any[]>([]);
   const [wbCard, setWbCard] = React.useState<{ vendorCode?: string; objectName?: string; stocksWb?: number } | null>(null);
+  const [lifetime, setLifetime] = React.useState<{ units: number; revenue: number }>({ units: 0, revenue: 0 });
 
   const skuStr = product ? String(product.sku) : '';
 
@@ -116,7 +117,8 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
       }
 
       // Sales (последние 30 дней) — прямой WB + сохранение в БД
-      const salesDateFrom = `${since.toISOString().split('T')[0]}T00:00:00`;
+      // Берем продажи за всё время с безопасной ранней даты
+      const salesDateFrom = `2019-01-01T00:00:00`;
       const directUrlSales = `https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${salesDateFrom}`;
       const wbSalesResp = await fetch(directUrlSales, { headers: { Authorization: key, Accept: 'application/json' } });
       if (wbSalesResp.ok) {
@@ -222,6 +224,18 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
             totalPrice: typeof r.revenue === 'number' ? r.revenue : undefined,
             warehouseName: r.warehouse || undefined
           })));
+        }
+        // Lifetime aggregation from DB (вся история)
+        const { data: allSales } = await supabase
+          .from('wb_sales')
+          .select('units,revenue')
+          .eq('user_id', user.id)
+          .eq('sku', skuStr)
+          .limit(50000);
+        if (allSales) {
+          const units = (allSales as any[]).reduce((s, r: any) => s + Number(r.units || 0), 0);
+          const revenue = (allSales as any[]).reduce((s, r: any) => s + (typeof r.revenue === 'number' ? r.revenue : 0), 0);
+          setLifetime({ units, revenue });
         }
       }
     } catch (e: any) {
@@ -438,6 +452,14 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
               <div className="bg-gray-50 rounded p-3">
                 <div className="text-sm text-gray-500">Выручка за 30 дней</div>
                 <div className="text-2xl font-bold">₽{fmtRub(salesAgg.revenue)}</div>
+              </div>
+              <div className="bg-gray-50 rounded p-3">
+                <div className="text-sm text-gray-500">Всего продаж (шт)</div>
+                <div className="text-2xl font-bold">{lifetime.units}</div>
+              </div>
+              <div className="bg-gray-50 rounded p-3">
+                <div className="text-sm text-gray-500">Выручка за всё время</div>
+                <div className="text-2xl font-bold">₽{fmtRub(lifetime.revenue)}</div>
               </div>
               <div className="bg-gray-50 rounded p-3">
                 <div className="text-sm text-gray-500">Актуальная цена</div>
