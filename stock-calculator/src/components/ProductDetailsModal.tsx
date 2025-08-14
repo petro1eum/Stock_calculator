@@ -401,7 +401,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
   if (!product) return null;
 
   // Группировка остатков по складам: берём по каждому штрихкоду (barcode) последний снапшот, затем суммируем по складу
-  // Также добавляем склады, встречающиеся в последних продажах, даже если в stocks их нет (показываем 0)
+  // Показываем ТОЛЬКО склады с положительным остатком
   const warehouses: Array<{ warehouse: string; qty: number; inWayToClient: number; inWayFromClient: number }>= (() => {
     const normalize = (w?: string|null) => {
       let s = (w && String(w).trim()) ? String(w).trim() : 'UNKNOWN';
@@ -449,12 +449,11 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
       byBc.forEach(s => { qty += s.qty; iwc += s.iwc; iwf += s.iwf; });
       totals.set(wh, { qty, iwc, iwf });
     });
-    // Добавляем склады из последних продаж
-    (sales30d || []).forEach(r => {
-      const wh = normalize(r.warehouseName);
-      if (!totals.has(wh)) totals.set(wh, { qty: 0, iwc: 0, iwf: 0 });
-    });
-    return Array.from(totals.entries()).map(([warehouse, v]) => ({ warehouse, qty: v.qty, inWayToClient: v.iwc, inWayFromClient: v.iwf }));
+    // Возвращаем только склады с положительным остатком
+    return Array.from(totals.entries())
+      .map(([warehouse, v]) => ({ warehouse, qty: v.qty, inWayToClient: v.iwc, inWayFromClient: v.iwf }))
+      .filter(row => (row.qty || 0) > 0)
+      .sort((a, b) => (b.qty - a.qty));
   })();
 
   const totalQty = warehouses.reduce((s, w) => s + (w.qty || 0), 0);
