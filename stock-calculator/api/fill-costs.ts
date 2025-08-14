@@ -17,8 +17,14 @@ async function fetchCbrRateToRub(cur: 'USD'|'CNY'|'EUR'): Promise<number|null> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
+  // CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    res.setHeader('Allow', 'GET, POST, OPTIONS');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
@@ -42,14 +48,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!userId) return res.status(401).json({ error: 'No user context' });
 
     // Defaults and optional overrides
-    const body = (req.body || {}) as any;
+    const params = req.method === 'POST' ? (req.body || {}) as any : (req.query || {}) as any;
     const defaults = {
-      bagCnyPerUnit: typeof body.bagCnyPerUnit === 'number' ? body.bagCnyPerUnit : 21,
-      headphonesCnyPerUnit: typeof body.headphonesCnyPerUnit === 'number' ? body.headphonesCnyPerUnit : 26,
-      keychainCnyPerUnit: typeof body.keychainCnyPerUnit === 'number' ? body.keychainCnyPerUnit : 25,
-      batchUnitsBags: typeof body.batchUnitsBags === 'number' ? body.batchUnitsBags : 1171,
-      batchWeightBagsKg: typeof body.batchWeightBagsKg === 'number' ? body.batchWeightBagsKg : 382,
-      usdPerKg: typeof body.usdPerKg === 'number' ? body.usdPerKg : 3,
+      bagCnyPerUnit: typeof params.bagCnyPerUnit === 'number' ? params.bagCnyPerUnit : 21,
+      headphonesCnyPerUnit: typeof params.headphonesCnyPerUnit === 'number' ? params.headphonesCnyPerUnit : 26,
+      keychainCnyPerUnit: typeof params.keychainCnyPerUnit === 'number' ? params.keychainCnyPerUnit : 25,
+      batchUnitsBags: typeof params.batchUnitsBags === 'number' ? params.batchUnitsBags : 1171,
+      batchWeightBagsKg: typeof params.batchWeightBagsKg === 'number' ? params.batchWeightBagsKg : 382,
+      usdPerKg: typeof params.usdPerKg === 'number' ? params.usdPerKg : 3,
     };
 
     // FX
