@@ -481,7 +481,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">Карточка товара • {product.name} ({product.sku})</h3>
           <div className="flex items-center gap-2">
@@ -498,140 +498,132 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
         )}
 
         {!loading && !error && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gray-50 rounded p-3">
-                <div className="text-sm text-gray-500">Текущий общий остаток</div>
-                <div className="text-2xl font-bold">{totalQty}</div>
-              </div>
-              <div className="bg-gray-50 rounded p-3">
-                <div className="text-sm text-gray-500">Продажи за 30 дней</div>
-                <div className="text-2xl font-bold">{salesAgg.units}</div>
-              </div>
-              <div className="bg-gray-50 rounded p-3">
-                <div className="text-sm text-gray-500">Выручка за 30 дней</div>
-                <div className="text-2xl font-bold">₽{fmtRub(salesAgg.revenue)}</div>
-              </div>
-              <div className="bg-gray-50 rounded p-3">
-                <div className="text-sm text-gray-500">Всего продаж (шт)</div>
-                <div className="text-2xl font-bold">{lifetime.units}</div>
-              </div>
-              <div className="bg-gray-50 rounded p-3">
-                <div className="text-sm text-gray-500">Выручка за всё время</div>
-                <div className="text-2xl font-bold">₽{fmtRub(lifetime.revenue)}</div>
-              </div>
-              <div className="bg-gray-50 rounded p-3">
-                <div className="text-sm text-gray-500">Актуальная цена</div>
-                <div className="text-2xl font-bold">
-                  {typeof latestPrice === 'number' ? `₽${fmtRub(latestPrice)}` : '—'}
-                  {typeof latestDiscount === 'number' && latestDiscount > 0 && (
-                    <span className="text-sm text-gray-500 ml-2">(скидка {latestDiscount}%)</span>
-                  )}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="bg-gray-50 rounded p-3">
+                  <div className="text-sm text-gray-500">Текущий общий остаток</div>
+                  <div className="text-2xl font-bold">{totalQty}</div>
+                </div>
+                <div className="bg-gray-50 rounded p-3">
+                  <div className="text-sm text-gray-500">Продажи за 30 дней</div>
+                  <div className="text-2xl font-bold">{salesAgg.units}</div>
+                </div>
+                <div className="bg-gray-50 rounded p-3">
+                  <div className="text-sm text-gray-500">Выручка за 30 дней</div>
+                  <div className="text-2xl font-bold">₽{fmtRub(salesAgg.revenue)}</div>
+                </div>
+                <div className="bg-gray-50 rounded p-3">
+                  <div className="text-sm text-gray-500">Всего продаж (шт)</div>
+                  <div className="text-2xl font-bold">{lifetime.units}</div>
+                </div>
+                <div className="bg-gray-50 rounded p-3">
+                  <div className="text-sm text-gray-500">Выручка за всё время</div>
+                  <div className="text-2xl font-bold">₽{fmtRub(lifetime.revenue)}</div>
+                </div>
+                <div className="bg-gray-50 rounded p-3">
+                  <div className="text-sm text-gray-500">Актуальная цена</div>
+                  <div className="text-2xl font-bold">
+                    {typeof latestPrice === 'number' ? `₽${fmtRub(latestPrice)}` : '—'}
+                    {typeof latestDiscount === 'number' && latestDiscount > 0 && (
+                      <span className="text-sm text-gray-500 ml-2">(скидка {latestDiscount}%)</span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {wbCard && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-50 rounded p-3">
-                  <div className="text-sm text-gray-500">VendorCode</div>
-                  <div className="text-lg font-semibold">{wbCard.vendorCode || '—'}</div>
-                </div>
-                <div className="bg-gray-50 rounded p-3">
-                  <div className="text-sm text-gray-500">Объект</div>
-                  <div className="text-lg font-semibold">{wbCard.objectName || '—'}</div>
-                </div>
-                <div className="bg-gray-50 rounded p-3">
-                  <div className="text-sm text-gray-500">Stocks WB (analytics)</div>
-                  <div className="text-lg font-semibold">{typeof wbCard.stocksWb === 'number' ? wbCard.stocksWb : '—'}</div>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <h4 className="text-md font-semibold mb-2">Остатки по складам</h4>
-              {warehouses.length === 0 ? (
-                <div className="text-sm text-gray-500">Нет данных из WB за последние 30 дней</div>
-              ) : (
-                <div className="border rounded overflow-hidden">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Склад</th>
-                        <th className="px-3 py-2 text-right">В наличии</th>
-                        <th className="px-3 py-2 text-right">В пути к клиенту</th>
-                        <th className="px-3 py-2 text-right">Возвраты в пути</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {warehouses.map((w, i) => (
-                        <tr key={i} className="border-t">
-                          <td className="px-3 py-2">{w.warehouse}</td>
-                          <td className="px-3 py-2 text-right">{w.qty}</td>
-                          <td className="px-3 py-2 text-right">{w.inWayToClient}</td>
-                          <td className="px-3 py-2 text-right">{w.inWayFromClient}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {wbCard && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded p-3">
+                    <div className="text-sm text-gray-500">VendorCode</div>
+                    <div className="text-lg font-semibold">{wbCard.vendorCode || '—'}</div>
+                  </div>
+                  <div className="bg-gray-50 rounded p-3">
+                    <div className="text-sm text-gray-500">Объект</div>
+                    <div className="text-lg font-semibold">{wbCard.objectName || '—'}</div>
+                  </div>
+                  <div className="bg-gray-50 rounded p-3">
+                    <div className="text-sm text-gray-500">Stocks WB (analytics)</div>
+                    <div className="text-lg font-semibold">{typeof wbCard.stocksWb === 'number' ? wbCard.stocksWb : '—'}</div>
+                  </div>
                 </div>
               )}
+
+              {priceCards && priceCards.length > 0 && (
+                <div>
+                  <h4 className="text-md font-semibold mb-2">Цены по размерам</h4>
+                  <div className="border rounded overflow-hidden">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Размер</th>
+                          <th className="px-3 py-2 text-right">Цена</th>
+                          <th className="px-3 py-2 text-right">Цена со скидкой</th>
+                          <th className="px-3 py-2 text-right">Скидка</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {priceCards.map((s: any, i: number) => (
+                          <tr key={i} className="border-t">
+                            <td className="px-3 py-2">{s.techSizeName || s.sizeID || s.sizeId || s.id || '-'}</td>
+                            <td className="px-3 py-2 text-right">{typeof s.price === 'number' ? fmtRub(s.price) : '-'}</td>
+                            <td className="px-3 py-2 text-right">{typeof s.discountedPrice === 'number' ? fmtRub(s.discountedPrice) : '-'}</td>
+                            <td className="px-3 py-2 text-right">{typeof s.discount === 'number' ? `${s.discount}%` : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <h4 className="text-md font-semibold mb-2">Последние продажи (30д)</h4>
+                {sales30d.length === 0 ? (
+                  <div className="text-sm text-gray-500">Нет продаж</div>
+                ) : (
+                  <div className="h-40 overflow-auto border rounded">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-100 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Дата</th>
+                          <th className="px-3 py-2 text-right">Кол-во</th>
+                          <th className="px-3 py-2 text-right">Выручка</th>
+                          <th className="px-3 py-2 text-left">Склад</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sales30d.slice(0, 100).map((s, i) => (
+                          <tr key={i} className="border-t">
+                            <td className="px-3 py-2">{s.date}</td>
+                            <td className="px-3 py-2 text-right">{s.quantity}</td>
+                            <td className="px-3 py-2 text-right">{typeof s.totalPrice === 'number' ? Math.round(s.totalPrice) : '-'}</td>
+                            <td className="px-3 py-2">{s.warehouseName || ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {priceCards && priceCards.length > 0 && (
-              <div>
-                <h4 className="text-md font-semibold mb-2">Цены по размерам</h4>
-                <div className="border rounded overflow-hidden">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Размер</th>
-                        <th className="px-3 py-2 text-right">Цена</th>
-                        <th className="px-3 py-2 text-right">Цена со скидкой</th>
-                        <th className="px-3 py-2 text-right">Скидка</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {priceCards.map((s: any, i: number) => (
-                        <tr key={i} className="border-t">
-                          <td className="px-3 py-2">{s.techSizeName || s.sizeID || s.sizeId || s.id || '-'}</td>
-                          <td className="px-3 py-2 text-right">{typeof s.price === 'number' ? fmtRub(s.price) : '-'}</td>
-                          <td className="px-3 py-2 text-right">{typeof s.discountedPrice === 'number' ? fmtRub(s.discountedPrice) : '-'}</td>
-                          <td className="px-3 py-2 text-right">{typeof s.discount === 'number' ? `${s.discount}%` : '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-md font-semibold">Остатки по складам</h4>
+                <span className="text-xs text-gray-500">{warehouses.length} склад(а)</span>
               </div>
-            )}
-
-            <div>
-              <h4 className="text-md font-semibold mb-2">Последние продажи (30д)</h4>
-              {sales30d.length === 0 ? (
-                <div className="text-sm text-gray-500">Нет продаж</div>
+              {warehouses.length === 0 ? (
+                <div className="text-sm text-gray-500">Нет положительных остатков</div>
               ) : (
-                <div className="h-40 overflow-auto border rounded">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-100 sticky top-0">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Дата</th>
-                        <th className="px-3 py-2 text-right">Кол-во</th>
-                        <th className="px-3 py-2 text-right">Выручка</th>
-                        <th className="px-3 py-2 text-left">Склад</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sales30d.slice(0, 100).map((s, i) => (
-                        <tr key={i} className="border-t">
-                          <td className="px-3 py-2">{s.date}</td>
-                          <td className="px-3 py-2 text-right">{s.quantity}</td>
-                          <td className="px-3 py-2 text-right">{typeof s.totalPrice === 'number' ? Math.round(s.totalPrice) : '-'}</td>
-                          <td className="px-3 py-2">{s.warehouseName || ''}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+                  {warehouses.map((w, i) => (
+                    <div key={i} className="border rounded p-2">
+                      <div className="text-sm font-medium truncate" title={w.warehouse}>{w.warehouse}</div>
+                      <div className="text-xs text-gray-600">В наличии: <span className="font-semibold">{w.qty}</span></div>
+                      <div className="text-[11px] text-gray-500">В пути: {w.inWayToClient} • Возвраты: {w.inWayFromClient}</div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
