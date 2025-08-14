@@ -41,7 +41,9 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     warehouseCapacity: 10000, // 10000 единиц
     maxSuppliers: 5,
     minOrderValue: 10000, // мин заказ 10к руб
-    targetServiceLevel: 0.95
+    targetServiceLevel: 0.95,
+    maxSkuShare: 0.4,
+    minDistinctSkus: 5
   });
   
   const fmt = formatNumber;

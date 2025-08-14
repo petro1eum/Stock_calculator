@@ -119,11 +119,20 @@ export class PortfolioOptimizer {
     let remainingBudget = this.constraints.totalBudget;
     let remainingSpace = this.constraints.warehouseCapacity;
     
+    const maxShare = this.constraints.maxSkuShare && this.constraints.maxSkuShare > 0 && this.constraints.maxSkuShare <= 1
+      ? this.constraints.maxSkuShare
+      : 0.5; // по умолчанию не больше 50% бюджета в один SKU
+
+    const minKinds = Math.max(0, this.constraints.minDistinctSkus || 0);
+    let kindsChosen = 0;
+
     for (const product of rankedProducts) {
       const originalProduct = product.originalProduct;
       
       // Сколько можем купить?
-      const maxByBudget = Math.floor(remainingBudget / product.K);
+      const perSkuBudgetCap = (this.constraints.totalBudget * maxShare);
+      const remainingPerSku = perSkuBudgetCap; // на каждый новый SKU не больше cap
+      const maxByBudget = Math.floor(Math.min(remainingBudget, remainingPerSku) / product.K);
       const maxBySpace = Math.floor(remainingSpace / (product.volume || 1));
       const maxByConstraints = Math.min(maxByBudget, maxBySpace);
       
@@ -141,6 +150,7 @@ export class PortfolioOptimizer {
         allocation.set(product.id, optimalQty);
         remainingBudget -= optimalQty * product.K;
         remainingSpace -= optimalQty * (product.volume || 1);
+        kindsChosen += 1;
       }
     }
     
@@ -149,6 +159,19 @@ export class PortfolioOptimizer {
     
     // 6. Проверяем, не превышаем ли бюджет после корреляционных правил
     const finalAllocation = this.enforceConstraints(adjustedAllocation, normalizedProducts);
+
+    // Если выбрали меньше, чем требуется по minDistinctSkus, распределим минимальные объемы
+    if (minKinds > 0 && Array.from(finalAllocation.keys()).length < minKinds) {
+      const need = minKinds - Array.from(finalAllocation.keys()).length;
+      for (const np of rankedProducts) {
+        if (Array.from(finalAllocation.keys()).includes(np.id)) continue;
+        const canBuy = Math.floor((remainingBudget) / np.K);
+        if (canBuy <= 0) continue;
+        finalAllocation.set(np.id, 1);
+        remainingBudget -= np.K;
+        if (Array.from(finalAllocation.keys()).length >= minKinds) break;
+      }
+    }
     
     // 7. Рассчитываем метрики портфеля
     return this.calculatePortfolioMetrics(finalAllocation, normalizedProducts);

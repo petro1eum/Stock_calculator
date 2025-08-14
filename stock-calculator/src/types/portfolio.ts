@@ -22,6 +22,10 @@ export interface PortfolioConstraints {
   maxSuppliers?: number;
   minOrderValue?: number;
   targetServiceLevel?: number;
+  // Максимальная доля бюджета на один SKU (0..1)
+  maxSkuShare?: number;
+  // Минимальное число разных SKU в портфеле
+  minDistinctSkus?: number;
 }
 
 export interface PortfolioAllocation {
