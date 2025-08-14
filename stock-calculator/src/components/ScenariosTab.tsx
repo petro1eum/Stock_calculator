@@ -483,6 +483,37 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                   className="w-full p-2 border border-gray-300 rounded-md"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Макс. доля на один SKU (%)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={(portfolioConstraints.maxSkuShare ?? 0.4) * 100}
+                  onChange={(e) => setPortfolioConstraints(prev => ({
+                    ...prev,
+                    maxSkuShare: Math.min(1, Math.max(0.01, Number(e.target.value) / 100))
+                  }))}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Мин. число SKU в портфеле
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={portfolioConstraints.minDistinctSkus ?? 0}
+                  onChange={(e) => setPortfolioConstraints(prev => ({
+                    ...prev,
+                    minDistinctSkus: Math.max(0, Number(e.target.value))
+                  }))}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                />
+              </div>
             </div>
           </div>
 
@@ -568,6 +599,45 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       </div>
                     </div>
                   </div>
+                </div>
+                {/* Экспорт заказа */}
+                <div className="mt-4">
+                  <button
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                    onClick={() => {
+                      if (!portfolioOptimization) return;
+                      const rows = [
+                        ['sku','name','qty','investment_rub','expected_return_rub','supplier','category']
+                      ];
+                      products.forEach(p => {
+                        const q = portfolioOptimization.optimal.allocations.get(p.id) || 0;
+                        if (q <= 0) return;
+                        const investment = q * p.purchase;
+                        const expected = p.optQ && p.optQ > 0 ? (p.optValue * q) / p.optQ : p.optValue * q;
+                        rows.push([
+                          String(p.sku),
+                          p.name.replaceAll(',', ' '),
+                          String(q),
+                          String(Math.round(investment)),
+                          String(Math.round(expected)),
+                          String(p.supplier || 'domestic'),
+                          String(p.category || '')
+                        ]);
+                      });
+                      const csv = rows.map(r => r.join(',')).join('\n');
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `order_plan_${new Date().toISOString().slice(0,10)}.csv`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    Сформировать заказ (CSV)
+                  </button>
                 </div>
               </div>
 
