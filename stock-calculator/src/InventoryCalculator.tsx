@@ -1069,21 +1069,30 @@ const InventoryOptionCalculator = () => {
         const needFill = products.some(p => !p.purchase || p.purchase === 0);
         if (!needFill) return;
         (window as any).__COSTS_ATTEMPTED = true;
+        // частотный лимит: не чаще раза в 12 часов
+        try {
+          const last = window.localStorage.getItem('costsFill:last') || '';
+          if (last) {
+            const dt = new Date(last).getTime();
+            if (!isNaN(dt) && Date.now() - dt < 12 * 60 * 60 * 1000) return;
+          }
+        } catch {}
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-        // Try GET on /api (rewrite) then direct path
+        // Try GET on /api (rewrite) then direct path; parse JSON and check inserted
         const tryCall = async (url: string) => {
           try {
             const r = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } });
-            return r.ok;
+            if (!r.ok) return 0;
+            const j = await r.json().catch(() => ({} as any));
+            return typeof j?.inserted === 'number' ? j.inserted : 0;
           } catch { return false; }
         };
-        const ok = await tryCall('/api/fill-costs?auto=1') || await tryCall('/stock-calculator/api/fill-costs?auto=1');
-        if (ok) {
-          // Перезагрузим страницу, чтобы пройти гидрацию с обновленным wb_costs
-          window.location.reload();
-        }
+        const ins1 = await tryCall('/api/fill-costs?auto=1');
+        const inserted = ins1 > 0 ? ins1 : await tryCall('/stock-calculator/api/fill-costs?auto=1');
+        try { window.localStorage.setItem('costsFill:last', new Date().toISOString()); } catch {}
+        if (inserted > 0) window.location.reload();
       } catch {}
     })();
   }, [products]);
