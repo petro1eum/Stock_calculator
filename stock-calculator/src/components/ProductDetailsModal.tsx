@@ -81,7 +81,15 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
       if (!key) throw new Error('Нет WB API ключа. Сохраните его в настройках.');
       const directUrlStocks = `https://statistics-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${stocksDateFrom}`;
       const wbStocksResp = await fetch(directUrlStocks, { headers: { Authorization: key, Accept: 'application/json' } });
-      if (!wbStocksResp.ok) throw new Error(`WB stocks: ${wbStocksResp.status} ${wbStocksResp.statusText}`);
+      if (!wbStocksResp.ok) {
+        const txt = await wbStocksResp.text();
+        throw new Error(`WB stocks: ${wbStocksResp.status} ${wbStocksResp.statusText}; body: ${txt.slice(0,200)}`);
+      }
+      const ctStocks = wbStocksResp.headers.get('content-type') || '';
+      if (!ctStocks.includes('application/json')) {
+        const txt = await wbStocksResp.text();
+        throw new Error(`WB stocks non-JSON: ${txt.slice(0,200)}`);
+      }
       const wbStocksJson: any = await wbStocksResp.json();
       const stocksList: any[] = Array.isArray(wbStocksJson) ? wbStocksJson : (wbStocksJson?.stocks || []);
       const skuStocks = (stocksList || []).filter((r: any) => String(r.nmId ?? r.nmid) === skuStr);
@@ -125,6 +133,11 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
       const directUrlSales = `https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${salesDateFrom}`;
       const wbSalesResp = await fetch(directUrlSales, { headers: { Authorization: key, Accept: 'application/json' } });
       if (wbSalesResp.ok) {
+        const ctSales = wbSalesResp.headers.get('content-type') || '';
+        if (!ctSales.includes('application/json')) {
+          const txt = await wbSalesResp.text();
+          throw new Error(`WB sales non-JSON: ${txt.slice(0,200)}`);
+        }
         const wbSalesJson: any = await wbSalesResp.json();
         const salesList: any[] = Array.isArray(wbSalesJson) ? wbSalesJson : (wbSalesJson?.sales || []);
         const skuSales = (salesList || []).filter((r: any) => String(r.nmId ?? r.nmid) === skuStr);
@@ -151,6 +164,11 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
       try {
         const wbPricesResp = await fetch(directUrlPrices, { headers: { Authorization: key, Accept: 'application/json' } });
         if (wbPricesResp.ok) {
+          const ctPrices = wbPricesResp.headers.get('content-type') || '';
+          if (!ctPrices.includes('application/json')) {
+            const txt = await wbPricesResp.text();
+            throw new Error(`WB prices non-JSON: ${txt.slice(0,200)}`);
+          }
           const pricesJson = await wbPricesResp.json();
           const list = pricesJson?.data?.listGoods || pricesJson?.listGoods || [];
           const match = (list as any[]).find((g: any) => String(g.nmID ?? g.nmId ?? g.nmid) === skuStr);
