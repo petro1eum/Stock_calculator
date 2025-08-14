@@ -36,6 +36,7 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
   const [priceCards, setPriceCards] = React.useState<any[]>([]);
   const [wbCard, setWbCard] = React.useState<{ vendorCode?: string; objectName?: string; stocksWb?: number } | null>(null);
   const [lifetime, setLifetime] = React.useState<{ units: number; revenue: number }>({ units: 0, revenue: 0 });
+  const [warehousesDict, setWarehousesDict] = React.useState<Record<string,string>>({});
 
   const skuStr = product ? String(product.sku) : '';
 
@@ -172,6 +173,18 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
 
       // Update local state from latest DB snapshot for stocks as well
       if (user) {
+        // Справочник складов (для канонизации названий)
+        try {
+          const wResp = await fetch('/api/wb-warehouses');
+          if (wResp.ok) {
+            const wJson = await wResp.json();
+            const dict: Record<string,string> = {};
+            (wJson?.warehouses || []).forEach((w: any) => {
+              if (w && (w.id != null) && typeof w.name === 'string') dict[String(w.id)] = w.name;
+            });
+            setWarehousesDict(dict);
+          }
+        } catch {}
         const { data: dbStocks } = await supabase
           .from('wb_stocks')
           .select('date, sku, quantity, in_way_to_client, in_way_from_client, warehouse, price, discount, tech_size, barcode')
