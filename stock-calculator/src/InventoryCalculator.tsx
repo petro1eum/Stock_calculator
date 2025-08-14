@@ -1064,12 +1064,15 @@ const InventoryOptionCalculator = () => {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-        const resp = await fetch('/api/fill-costs', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
-        });
-        if (resp.ok) {
+        // Try GET on /api (rewrite) then direct path
+        const tryCall = async (url: string) => {
+          try {
+            const r = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } });
+            return r.ok;
+          } catch { return false; }
+        };
+        const ok = await tryCall('/api/fill-costs?auto=1') || await tryCall('/stock-calculator/api/fill-costs?auto=1');
+        if (ok) {
           // Перезагрузим страницу, чтобы пройти гидрацию с обновленным wb_costs
           window.location.reload();
         }
