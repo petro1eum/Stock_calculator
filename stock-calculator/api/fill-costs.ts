@@ -50,14 +50,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Get SKUs and subjects
     const skus = new Set<string>();
     const subjBySku = new Map<string, string>();
+    const nameBySku = new Map<string, string>();
     const add = (row: any) => { const s = String(row.sku || row.nm_id || row.nmId || row.nmid); if (s) skus.add(s); };
 
     const { data: stocks } = await admin.from('wb_stocks').select('sku, raw').eq('user_id', userId).limit(50000);
-    (stocks || []).forEach(r => { add(r); const subj = r.raw?.subject; if (subj && !subjBySku.has(String(r.sku))) subjBySku.set(String(r.sku), String(subj)); });
+    (stocks || []).forEach(r => { 
+      add(r); 
+      const sku = String(r.sku);
+      const subj = r.raw?.subject; if (subj && !subjBySku.has(sku)) subjBySku.set(sku, String(subj));
+      const vendor = r.raw?.vendorCode || r.raw?.supplierArticle || r.raw?.name; if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, String(vendor));
+    });
     const { data: an } = await admin.from('wb_analytics').select('nm_id, raw').eq('user_id', userId).limit(50000);
-    (an || []).forEach(r => { add({ sku: r.nm_id }); const subj = r.raw?.object?.name; if (subj && !subjBySku.has(String(r.nm_id))) subjBySku.set(String(r.nm_id), String(subj)); });
+    (an || []).forEach(r => { 
+      const sku = String(r.nm_id); 
+      add({ sku }); 
+      const subj = r.raw?.object?.name; if (subj && !subjBySku.has(sku)) subjBySku.set(sku, String(subj)); 
+      const vendor = r.raw?.vendorCode || r.raw?.supplierArticle || r.raw?.name; if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, String(vendor));
+    });
     const { data: sales } = await admin.from('wb_sales').select('sku, raw').eq('user_id', userId).limit(50000);
-    (sales || []).forEach(r => { add(r); const subj = r.raw?.subject; if (subj && !subjBySku.has(String(r.sku))) subjBySku.set(String(r.sku), String(subj)); });
+    (sales || []).forEach(r => { 
+      add(r); 
+      const sku = String(r.sku);
+      const subj = r.raw?.subject; if (subj && !subjBySku.has(sku)) subjBySku.set(sku, String(subj)); 
+      const vendor = r.raw?.supplierArticle || r.raw?.vendorCode || r.raw?.name; if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, String(vendor));
+    });
 
     // Compute logistics per unit for bags
     const logisticsPerUnitUsdBags = defaults.usdPerKg * (defaults.batchWeightBagsKg / Math.max(1, defaults.batchUnitsBags));
@@ -66,8 +82,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rows: any[] = [];
     skus.forEach((sku) => {
       const subj = (subjBySku.get(sku) || '').toLowerCase();
+      const name = (nameBySku.get(sku) || '').toLowerCase();
+      const text = `${subj} ${name}`;
       // bags
-      if (subj.includes('сумк')) {
+      if (text.includes('сумк') || text.includes('кроссбоди') || text.includes('bag')) {
         rows.push({
           user_id: userId,
           date: today,
@@ -81,7 +99,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return;
       }
       // headphones
-      if (subj.includes('наушник')) {
+      if (text.includes('наушник') || text.includes('headphone')) {
         rows.push({
           user_id: userId,
           date: today,
