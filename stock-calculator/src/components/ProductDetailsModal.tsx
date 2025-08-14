@@ -1,6 +1,7 @@
 import React from 'react';
 import { Product } from '../types';
 import { supabase } from '../utils/supabaseClient';
+import { fetchCbrRateToRub } from '../utils/fx';
 
 interface ProductDetailsModalProps {
   product: Product | null;
@@ -37,6 +38,8 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
   const [wbCard, setWbCard] = React.useState<{ vendorCode?: string; objectName?: string; stocksWb?: number } | null>(null);
   const [lifetime, setLifetime] = React.useState<{ units: number; revenue: number }>({ units: 0, revenue: 0 });
   const [warehousesDict, setWarehousesDict] = React.useState<Record<string,string>>({});
+  const [costForm, setCostForm] = React.useState<{ purchase_amount?: number|null; purchase_currency?: string; logistics_amount?: number|null; logistics_currency?: string; fx_rate?: number|null }>({ purchase_amount: null, purchase_currency: 'CNY', logistics_amount: null, logistics_currency: 'USD', fx_rate: null });
+  const [costStatus, setCostStatus] = React.useState<string | null>(null);
 
   const skuStr = product ? String(product.sku) : '';
 
@@ -272,6 +275,24 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
           const revenue = (allSales as any[]).reduce((s, r: any) => s + (typeof r.revenue === 'number' ? r.revenue : 0), 0);
           setLifetime({ units, revenue });
         }
+        // Load latest cost settings for this SKU (if any)
+        try {
+          const { data: costRow } = await supabase
+            .from('wb_costs')
+            .select('purchase_amount,purchase_currency,logistics_amount,logistics_currency,fx_rate')
+            .eq('user_id', user.id)
+            .eq('sku', skuStr)
+            .order('date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (costRow) setCostForm({
+            purchase_amount: typeof costRow.purchase_amount === 'number' ? costRow.purchase_amount : null,
+            purchase_currency: costRow.purchase_currency || 'CNY',
+            logistics_amount: typeof costRow.logistics_amount === 'number' ? costRow.logistics_amount : null,
+            logistics_currency: costRow.logistics_currency || 'USD',
+            fx_rate: typeof costRow.fx_rate === 'number' ? costRow.fx_rate : null
+          });
+        } catch {}
       }
     } catch (e: any) {
       setError(e.message || 'Ошибка обновления из WB');
@@ -644,6 +665,71 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
                   ))}
                 </div>
               )}
+              <div className="mt-4 border-t pt-3">
+                <h4 className="text-md font-semibold mb-2">Себестоимость (для расчетов)</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                  <div>
+                    <label className="block text-xs text-gray-600">Закуп (число)</label>
+                    <input type="number" step="0.01" value={costForm.purchase_amount ?? ''} onChange={(e)=>setCostForm(f=>({ ...f, purchase_amount: e.target.value===''?null:Number(e.target.value) }))} className="w-full border rounded px-2 py-1" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600">Валюта закупа</label>
+                    <select value={costForm.purchase_currency || 'CNY'} onChange={(e)=>setCostForm(f=>({ ...f, purchase_currency: e.target.value }))} className="w-full border rounded px-2 py-1">
+                      <option value="RUB">RUB</option>
+                      <option value="CNY">CNY</option>
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600">Логистика (число)</label>
+                    <input type="number" step="0.01" value={costForm.logistics_amount ?? ''} onChange={(e)=>setCostForm(f=>({ ...f, logistics_amount: e.target.value===''?null:Number(e.target.value) }))} className="w-full border rounded px-2 py-1" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600">Валюта логистики</label>
+                    <select value={costForm.logistics_currency || 'USD'} onChange={(e)=>setCostForm(f=>({ ...f, logistics_currency: e.target.value }))} className="w-full border rounded px-2 py-1">
+                      <option value="RUB">RUB</option>
+                      <option value="USD">USD</option>
+                      <option value="CNY">CNY</option>
+                      <option value="EUR">EUR</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600">FX к RUB (опц.)</label>
+                    <input type="number" step="0.0001" value={costForm.fx_rate ?? ''} onChange={(e)=>setCostForm(f=>({ ...f, fx_rate: e.target.value===''?null:Number(e.target.value) }))} className="w-full border rounded px-2 py-1" />
+                  </div>
+                  <div className="flex items-end">
+                    <button className="px-3 py-1 bg-green-600 text-white rounded" onClick={async ()=>{
+                      try {
+                        setCostStatus('Сохраняю...');
+                        const { data: { user } } = await supabase.auth.getUser();
+                        if (!user) throw new Error('Не авторизован');
+                        let fx = costForm.fx_rate ?? null;
+                        if (!fx && costForm.purchase_currency && costForm.purchase_currency !== 'RUB') {
+                          const rate = await fetchCbrRateToRub(costForm.purchase_currency, new Date().toISOString());
+                          fx = rate ?? null;
+                        }
+                        const payload: any = {
+                          user_id: user.id,
+                          date: `${new Date().toISOString().split('T')[0]}T00:00:00.000Z`,
+                          sku: skuStr,
+                          purchase_amount: costForm.purchase_amount ?? null,
+                          purchase_currency: costForm.purchase_currency || null,
+                          logistics_amount: costForm.logistics_amount ?? null,
+                          logistics_currency: costForm.logistics_currency || null,
+                          fx_rate: fx
+                        };
+                        const { error } = await supabase.from('wb_costs').upsert(payload, { onConflict: 'user_id,date,sku' });
+                        if (error) throw error;
+                        setCostStatus('Сохранено. Обновите страницу для пересчёта таблицы.');
+                      } catch (e: any) {
+                        setCostStatus(e.message || 'Ошибка сохранения');
+                      }
+                    }}>Сохранить в БД</button>
+                  </div>
+                </div>
+                {costStatus && <div className="text-xs text-gray-600 mt-1">{costStatus}</div>}
+              </div>
             </div>
           </div>
         )}
