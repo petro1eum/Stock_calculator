@@ -122,6 +122,27 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
   const currentMetrics = calcMetricsForQ(testQuantity);
   const optimalMetrics = calcMetricsForQ(product?.optQ || 0);
 
+  // Тестовый блок: оценка себестоимости для партии 1171 шт из Китая
+  const testChinaBatch = React.useMemo(() => {
+    const qty = 1171;
+    const yuanPerUnit = 21; // 21 юань за единицу
+    const kgTotal = 382; // общий вес партии, кг (с обрешеткой)
+    const usdPerKg = 3; // логистика $/кг
+    const cnyToRub = 13; // грубая оценка курса, можно заменить на fetchCbrRateToRub('CNY', today)
+    const usdToRub = 90; // грубая оценка курса USD→RUB для логистики
+    const unitCostRub = yuanPerUnit * cnyToRub; // себестоимость за единицу в рублях
+    const logisticsRubTotal = kgTotal * usdPerKg * usdToRub; // логистика на всю партию в рублях
+    const logisticsPerUnitRub = logisticsRubTotal / qty;
+    const fullUnitCostRub = unitCostRub + logisticsPerUnitRub;
+    return {
+      qty,
+      unitCostRub,
+      logisticsPerUnitRub,
+      fullUnitCostRub,
+      logisticsRubTotal
+    };
+  }, []);
+
   if (!product) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -280,8 +301,12 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
               <div className="text-green-800">{product.currency || 'RUB'} / {product.supplier || 'Domestic'}</div>
             </div>
           </div>
-          <div className="text-xs text-green-600 mt-2">
-            ℹ️ Себестоимость может включать фактические расходы из заказов Китая + логистику
+          <div className="mt-3 p-2 bg-white border rounded text-xs text-green-800">
+            <div className="font-semibold mb-1">Тестовая партия из Китая (для оценки)</div>
+            <div>Количество: {testChinaBatch.qty} шт</div>
+            <div>Себестоимость (21 юань/шт): ₽{fmtRub(testChinaBatch.unitCostRub)} за шт</div>
+            <div>Логистика (3 $/кг, 382 кг): всего ₽{fmtRub(testChinaBatch.logisticsRubTotal)} ≈ ₽{fmtRub(testChinaBatch.logisticsPerUnitRub)} за шт</div>
+            <div className="font-medium">Итого ориентировочно: ₽{fmtRub(testChinaBatch.fullUnitCostRub)} за шт</div>
           </div>
         </div>
       </div>
