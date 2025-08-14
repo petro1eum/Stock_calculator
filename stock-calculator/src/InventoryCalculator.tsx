@@ -1050,6 +1050,32 @@ const InventoryOptionCalculator = () => {
   const totalOptimalStock = productsWithMetrics.reduce((sum, p) => sum + p.optQ, 0);
   const totalOptionValue = productsWithMetrics.reduce((sum, p) => sum + p.optValue, 0);
 
+  // Автозаполнение себестоимости через серверный /api/fill-costs, если у всех товаров закуп/маржа нули
+  useEffect(() => {
+    (async () => {
+      try {
+        if (typeof window === 'undefined') return;
+        if (products.length === 0) return;
+        if (window.localStorage.getItem('costsFilled') === '1') return;
+        const allZero = products.every(p => !p.purchase || p.purchase === 0);
+        if (!allZero) return;
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+        const resp = await fetch('/api/fill-costs', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        if (resp.ok) {
+          window.localStorage.setItem('costsFilled', '1');
+          // Перезагрузим страницу, чтобы пройти гидрацию с обновленным wb_costs
+          window.location.reload();
+        }
+      } catch {}
+    })();
+  }, [products]);
+
   // КОМПОНЕНТ ВЕРНЕТСЯ ЗДЕСЬ
   return (
     <>
