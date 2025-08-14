@@ -72,13 +72,13 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
       setLoading(true);
       setError(null);
 
-      // Stocks (последние 30 дней)
-      const since = new Date(); since.setDate(since.getDate() - 30);
-      const dateParam = isoDateParam(since);
+      // Stocks — берем историю "с самого начала", чтобы не потерять склады без недавних изменений
+      const since = new Date(); since.setDate(since.getDate() - 30); // для 30д метрик ниже
+      const stocksDateFrom = `2019-01-01T00:00:00`;
       // Прямой WB запрос с ключом пользователя (надежно и без 404 роутов)
       const key = await getWbKey();
       if (!key) throw new Error('Нет WB API ключа. Сохраните его в настройках.');
-      const directUrlStocks = `https://statistics-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${dateParam}`;
+      const directUrlStocks = `https://statistics-api.wildberries.ru/api/v1/supplier/stocks?dateFrom=${stocksDateFrom}`;
       const wbStocksResp = await fetch(directUrlStocks, { headers: { Authorization: key, Accept: 'application/json' } });
       if (!wbStocksResp.ok) throw new Error(`WB stocks: ${wbStocksResp.status} ${wbStocksResp.statusText}`);
       const wbStocksJson: any = await wbStocksResp.json();
