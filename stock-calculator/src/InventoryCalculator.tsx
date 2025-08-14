@@ -139,12 +139,14 @@ const InventoryOptionCalculator = () => {
     { 
       id: 1, name: "iPhone 15 Case", sku: "SKU001", purchase: 7.5, margin: 18, 
       muWeek: 75, sigmaWeek: 25, revenue: 0, optQ: 0, optValue: 0, safety: 0,
-      currency: 'USD', supplier: 'china', category: 'Электроника', volume: 0.001
+      currency: 'USD', supplier: 'china', category: 'Электроника', volume: 0.001,
+      importCnyPerUnit: 21, importUnitsPerBatch: 1171, importWeightKgPerBatch: 382, importUsdPerKg: 3
     },
     { 
       id: 2, name: "Samsung TV 55\"", sku: "SKU002", purchase: 12.0, margin: 22, 
       muWeek: 55, sigmaWeek: 18, revenue: 0, optQ: 0, optValue: 0, safety: 0,
-      currency: 'EUR', supplier: 'europe', category: 'Электроника', volume: 0.15
+      currency: 'EUR', supplier: 'europe', category: 'Электроника', volume: 0.15,
+      importCnyPerUnit: 21, importUnitsPerBatch: 1171, importWeightKgPerBatch: 382, importUsdPerKg: 3
     },
     { 
       id: 3, name: "Футболка Uniqlo", sku: "SKU003", purchase: 4.2, margin: 8.5, 
@@ -154,18 +156,21 @@ const InventoryOptionCalculator = () => {
         enabled: true, 
         monthlyFactors: [0.5, 0.5, 0.8, 1.2, 1.5, 2.0, 2.0, 1.8, 1.2, 0.8, 0.5, 0.5],
         currentMonth: new Date().getMonth()
-      }
+      },
+      importCnyPerUnit: 21, importUnitsPerBatch: 1171, importWeightKgPerBatch: 382, importUsdPerKg: 3
     },
     { 
       id: 4, name: "Кофемашина DeLonghi", sku: "SKU004", purchase: 18.5, margin: 35, 
       muWeek: 25, sigmaWeek: 10, revenue: 0, optQ: 0, optValue: 0, safety: 0,
-      currency: 'RUB', supplier: 'domestic', category: 'Бытовая техника', volume: 0.05
+      currency: 'RUB', supplier: 'domestic', category: 'Бытовая техника', volume: 0.05,
+      importCnyPerUnit: 21, importUnitsPerBatch: 1171, importWeightKgPerBatch: 382, importUsdPerKg: 3
     },
     { 
       id: 5, name: "Наушники Sony WH-1000XM5", sku: "SKU005", purchase: 5.0, margin: 12, 
       muWeek: 95, sigmaWeek: 30, revenue: 0, optQ: 0, optValue: 0, safety: 0,
       currency: 'USD', supplier: 'usa', category: 'Электроника', volume: 0.003,
-      minOrderQty: 10, maxStorageQty: 500
+      minOrderQty: 10, maxStorageQty: 500,
+      importCnyPerUnit: 26, importUnitsPerBatch: 1171, importWeightKgPerBatch: 382, importUsdPerKg: 3
     },
   ], []);
 
