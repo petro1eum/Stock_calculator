@@ -41,6 +41,34 @@ export class PortfolioOptimizer {
     private weeks: number,
     private monteCarloParams: any
   ) {}
+
+  // Построение недельных рядов выручки (₽) для каждого товара, для оценки ковариаций
+  private buildWeeklyRevenueSeries(lookbackWeeks: number = 26): Map<number, number[]> {
+    const series = new Map<number, number[]>();
+    const now = new Date();
+    const msWeek = 7 * 24 * 60 * 60 * 1000;
+    const startMs = now.getTime() - lookbackWeeks * msWeek;
+    for (const p of this.products) {
+      const buckets: number[] = Array(lookbackWeeks).fill(0);
+      const rawSales: any[] = Array.isArray((p as any).salesHistory) ? (p as any).salesHistory : [];
+      for (const rec of rawSales) {
+        const t = new Date(rec.date).getTime();
+        if (isNaN(t) || t < startMs || t > now.getTime()) continue;
+        const idx = Math.min(lookbackWeeks - 1, Math.floor((t - startMs) / msWeek));
+        const revenueRub = typeof rec.revenue === 'number' && rec.revenue > 0
+          ? Number(rec.revenue)
+          : (Number(rec.units || 0) * (p.purchase + p.margin));
+        buckets[idx] += Math.max(0, revenueRub || 0);
+      }
+      // Если нет истории — синтетика по μ/σ
+      if (rawSales.length === 0) {
+        const weeklyMean = Math.max(0, p.muWeek) * (p.purchase + p.margin);
+        for (let i = 0; i < lookbackWeeks; i++) buckets[i] = weeklyMean;
+      }
+      series.set(p.id, buckets);
+    }
+    return series;
+  }
   
   // Нормализация продукта к единой базе
   normalizeProduct(product: Product): NormalizedProduct {
@@ -324,28 +352,42 @@ export class PortfolioOptimizer {
     allocation: Map<number, number>,
     products: NormalizedProduct[]
   ): number {
-    // Упрощенный расчет риска через диверсификацию
-    const activeProducts = Array.from(allocation.keys()).length;
-    const diversificationFactor = 1 / Math.sqrt(activeProducts);
+    // Оценим риск портфеля как CV недельной выручки: std(Σ w_i*R_i) / mean(Σ w_i*R_i)
+    const lookbackWeeks = 26;
+    const seriesByProduct = this.buildWeeklyRevenueSeries(lookbackWeeks);
     
-    // Средневзвешенная волатильность
-    let weightedVolatility = 0;
-    let totalWeight = 0;
-    
-    Array.from(allocation.entries()).forEach(([id, qty]) => {
-      const product = products.find(p => p.id === id);
-      if (!product) return;
-      
-      const weight = qty * product.K;
-      weightedVolatility += product.sigma * weight;
-      totalWeight += weight;
+    // Веса по инвестициям
+    let totalInvestment = 0;
+    const weightById = new Map<number, number>();
+    allocation.forEach((qty, id) => {
+      const np = products.find(p => p.id === id);
+      if (!np) return;
+      const inv = qty * np.K;
+      totalInvestment += inv;
+      weightById.set(id, inv);
+    });
+    if (totalInvestment <= 0) return 0;
+    Array.from(weightById.keys()).forEach(id => {
+      weightById.set(id, (weightById.get(id)! / totalInvestment));
     });
     
-    if (totalWeight > 0) {
-      weightedVolatility /= totalWeight;
-    }
-    
-    return weightedVolatility * diversificationFactor;
+    // Синтез портфельного ряда
+    const portfolio: number[] = Array(lookbackWeeks).fill(0);
+    weightById.forEach((w, id) => {
+      const s = seriesByProduct.get(id);
+      if (!s) return;
+      for (let t = 0; t < lookbackWeeks; t++) {
+        portfolio[t] += w * s[t];
+      }
+    });
+    const n = portfolio.length;
+    if (n === 0) return 0;
+    const mean = portfolio.reduce((a, b) => a + b, 0) / n;
+    if (mean <= 0) return 0;
+    const variance = n > 1 ? portfolio.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1) : 0;
+    const std = Math.sqrt(variance);
+    // Коэффициент вариации как относительный риск
+    return std / mean;
   }
   
   // Построение эффективной границы
