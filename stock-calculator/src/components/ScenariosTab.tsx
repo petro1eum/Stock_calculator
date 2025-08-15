@@ -138,43 +138,15 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
 
   // Загрузка корреляций (ProbStates) из Supabase, если доступны
   React.useEffect(() => {
-    const loadCorr = async () => {
-      try {
-        // Получаем последнюю матрицу корреляций
-        await fetch('/api/portfolio-refresh?horizonWeeks=26'); // триггер на пересчет (не критично)
-        const cov = await fetch('/api/portfolio-cov');
-        if (cov.ok) {
-          const json = await cov.json();
-          if (Array.isArray(json.skus) && Array.isArray(json.matrix)) {
-            const skuToId = new Map(products.map(p => [String(p.sku), p.id] as [string, number]));
-            const m = new Map<number, Map<number, number>>();
-            json.skus.forEach((sku: string, i: number) => {
-              const idI = skuToId.get(String(sku));
-              if (!idI) return;
-              const row = new Map<number, number>();
-              (json.matrix[i] || []).forEach((rho: number, j: number) => {
-                const idJ = skuToId.get(String(json.skus[j]));
-                if (!idJ) return;
-                row.set(idJ, Number(rho));
-              });
-              m.set(idI, row);
-            });
-            setCorrById(m);
-            return;
-          }
-        }
-        // fallback: единичная матрица
-        const ids = products.map(p => p.id);
-        const ident = new Map<number, Map<number, number>>();
-        ids.forEach(i => {
-          const row = new Map<number, number>();
-          ids.forEach(j => row.set(j, i === j ? 1 : 0));
-          ident.set(i, row);
-        });
-        setCorrById(ident);
-      } catch {}
-    };
-    loadCorr();
+    // по умолчанию не фетчим ничего — ставим единичную, чтобы не блокировать UI на входе
+    const ids = products.map(p => p.id);
+    const ident = new Map<number, Map<number, number>>();
+    ids.forEach(i => {
+      const row = new Map<number, number>();
+      ids.forEach(j => row.set(j, i === j ? 1 : 0));
+      ident.set(i, row);
+    });
+    setCorrById(ident);
   }, [products]);
   
   // Расчет для каждого сценария
@@ -255,7 +227,8 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   // Портфельная оптимизация
   const portfolioOptimization = useMemo(() => {
     if (products.length === 0) return null;
-    
+    if (activeView !== 'portfolio') return null; // не считать, пока вкладка не активна
+ 
     // Если используем ML прогнозы, обновляем muWeek и sigmaWeek у продуктов
     const productsWithMl = useMLForecasts ? products.map(p => ({
       ...p,
@@ -302,7 +275,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
         capital: optimal.totalInvestment - current.totalInvestment
       }
     };
-  }, [products, dynamicConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts]);
+  }, [activeView, products, dynamicConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts]);
 
   const recommendations = useMemo(() => {
     if (!portfolioOptimization) return [] as Array<{ id: number; sku: string; name: string; qty: number; invest: number; value: number; share: number }>;
