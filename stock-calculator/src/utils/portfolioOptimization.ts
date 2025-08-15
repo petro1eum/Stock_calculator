@@ -127,24 +127,46 @@ export class PortfolioOptimizer {
   
   // Основная функция оптимизации
   optimize(): PortfolioAllocation {
-    // 1. Нормализуем все продукты
+    // 1. Нормализуем все продукты (для стоимости/объема); строгую ценность считаем по смеси сценариев
     const normalizedProducts = this.products.map(p => this.normalizeProduct(p));
-    
-    // 2. Рассчитываем опционы и Sharpe Ratio
-    const productsWithMetrics = normalizedProducts.map(np => {
-      const optionValue = this.calculateOptionValue(np);
-      const sharpeRatio = (optionValue - np.K) / (np.K * np.sigma);
-      
-      return {
-        ...np,
-        optionValue,
-        sharpeRatio
-      };
-    });
-    
-    // 3. Ранжируем по Sharpe Ratio
-    const rankedProducts = productsWithMetrics
-      .sort((a, b) => b.sharpeRatio - a.sharpeRatio);
+
+    // 2. Для ранжирования используем строгую BS-ценность по смеси сценариев на оптимальном q*;
+    //    score = value_best / (bestQ * unitCostApprox)
+    const scenarios = (this.bsScenarios && this.bsScenarios.length > 0)
+      ? this.bsScenarios
+      : [{ probability: 1, muWeekMultiplier: 1, sigmaWeekMultiplier: 1 }];
+
+    const rankedProducts = normalizedProducts
+      .map(np => {
+        const p = np.originalProduct;
+        const unitCostApprox = Math.max(1, p.purchase || np.K);
+        const minQty = p.minOrderQty || 0;
+        const maxQty = isFinite(p.maxStorageQty || NaN) ? (p.maxStorageQty as number) : Math.floor(this.constraints.totalBudget / unitCostApprox);
+        const upperBound = Math.max(0, maxQty);
+        if (upperBound <= 0) {
+          return { ...np, score: 0, bestQ: 0, bestValue: 0 } as any;
+        }
+        const evalQ = (q: number) => strictBSMixtureOptionValue(
+          q,
+          Math.max(0, p.muWeek || 0),
+          Math.max(0, p.sigmaWeek || 0),
+          this.weeks,
+          Math.max(0, p.purchase || 0),
+          Math.max(0, p.margin || 0),
+          this.rushProb,
+          this.rushSave,
+          scenarios,
+          this.r,
+          this.hold,
+          p.volumeDiscounts,
+          this.monteCarloParams
+        );
+        const { bestQ, bestValue } = optimizeQuantity(Math.max(0, minQty), Math.max(0, upperBound), Math.max(1, Math.round((p.muWeek || 1) / 10)), evalQ);
+        const denom = Math.max(1, bestQ * unitCostApprox);
+        const score = bestValue / denom;
+        return { ...np, score, bestQ, bestValue } as any;
+      })
+      .sort((a: any, b: any) => b.score - a.score);
     
     // 4. Жадно заполняем портфель
     const allocation = new Map<number, number>();
@@ -158,7 +180,7 @@ export class PortfolioOptimizer {
     const minKinds = Math.max(0, this.constraints.minDistinctSkus || 0);
     let kindsChosen = 0;
 
-    for (const product of rankedProducts) {
+    for (const product of rankedProducts as any[]) {
       const originalProduct = product.originalProduct;
       
       // Бюджетные и складские ограничения
@@ -173,30 +195,9 @@ export class PortfolioOptimizer {
       const maxQty = isFinite(originalProduct.maxStorageQty || NaN) ? (originalProduct.maxStorageQty as number) : Infinity;
       const upperBound = Math.max(0, Math.min(maxByConstraints, isFinite(maxQty) ? maxQty : maxByConstraints));
       if (upperBound <= 0) continue;
-
-      // Строгая BS по смеси сценариев для данного товара
-      const scenarios = (this.bsScenarios && this.bsScenarios.length > 0)
-        ? this.bsScenarios
-        : [{ probability: 1, muWeekMultiplier: 1, sigmaWeekMultiplier: 1 }];
-
-      const evalQ = (q: number) => strictBSMixtureOptionValue(
-        q,
-        Math.max(0, originalProduct.muWeek || 0),
-        Math.max(0, originalProduct.sigmaWeek || 0),
-        this.weeks,
-        Math.max(0, originalProduct.purchase || 0),
-        Math.max(0, originalProduct.margin || 0),
-        this.rushProb,
-        this.rushSave,
-        scenarios,
-        this.r,
-        this.hold,
-        originalProduct.volumeDiscounts,
-        this.monteCarloParams
-      );
-
-      const { bestQ } = optimizeQuantity(Math.max(0, minQty), Math.max(0, upperBound), Math.max(1, Math.round((originalProduct.muWeek || 1) / 10)), evalQ);
-      const optimalQty = Math.min(upperBound, Math.max(minQty, bestQ));
+      // Используем уже рассчитанный bestQ из ранжирования, но ограничиваем текущими бюджетными лимитами
+      const estimatedBestQ = Math.max(0, product.bestQ || 0);
+      const optimalQty = Math.min(upperBound, Math.max(minQty, estimatedBestQ));
       
       if (optimalQty > 0) {
         allocation.set(product.id, optimalQty);
@@ -340,9 +341,27 @@ export class PortfolioOptimizer {
       const investment = qty * product.K;
       totalInvestment += investment;
       
-      // Пересчитываем опционную стоимость для данного продукта
-      const optionValue = this.calculateOptionValue(product);
-      expectedReturn += optionValue * qty;
+      // Строгий BS: ценность для данного товара при количестве qty
+      const p = product.originalProduct;
+      const scenarios = (this.bsScenarios && this.bsScenarios.length > 0)
+        ? this.bsScenarios
+        : [{ probability: 1, muWeekMultiplier: 1, sigmaWeekMultiplier: 1 }];
+      const value = strictBSMixtureOptionValue(
+        qty,
+        Math.max(0, p.muWeek || 0),
+        Math.max(0, p.sigmaWeek || 0),
+        this.weeks,
+        Math.max(0, p.purchase || 0),
+        Math.max(0, p.margin || 0),
+        this.rushProb,
+        this.rushSave,
+        scenarios,
+        this.r,
+        this.hold,
+        p.volumeDiscounts,
+        this.monteCarloParams
+      );
+      expectedReturn += Math.max(0, value);
       
       // Валютная экспозиция
       const currency = product.originalProduct.currency || 'RUB';

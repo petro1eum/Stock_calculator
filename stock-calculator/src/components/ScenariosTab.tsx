@@ -40,6 +40,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   const [budgetInput, setBudgetInput] = useState<number>(1000000);
   const [showRecommendations, setShowRecommendations] = useState<boolean>(false);
   const [corrById, setCorrById] = useState<Map<number, Map<number, number>> | undefined>(undefined);
+  const [covLastUpdated, setCovLastUpdated] = useState<string | undefined>(undefined);
   
   // Состояние для портфельной оптимизации
   const [portfolioConstraints, setPortfolioConstraints] = useState<PortfolioConstraints>({
@@ -55,6 +56,67 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   const fmt = formatNumber;
   
   const product = products.find(p => p.id === selectedProduct);
+  
+  // Динамически вычисляем ограничения диверсификации из данных (волатильности/корреляции)
+  const dynamicConstraints: PortfolioConstraints = React.useMemo(() => {
+    const eps = 1e-9;
+    // веса ~ 1/CV по ML либо историческим
+    const weights = new Map<number, number>();
+    let sumW = 0;
+    for (const p of products) {
+      const muW = mlForecasts[p.sku]?.mu ?? p.muWeek ?? 0;
+      const sW = mlForecasts[p.sku]?.sigma ?? p.sigmaWeek ?? 0;
+      const price = (p.purchase || 0) + (p.margin || 0);
+      const muRev = Math.max(0, muW * weeks * price);
+      const sigmaRev = Math.max(0, sW * Math.sqrt(weeks) * price);
+      if (muRev <= 0) continue;
+      const cv = sigmaRev / Math.max(muRev, eps);
+      const w = 1 / Math.max(cv, 0.01);
+      weights.set(p.id, w);
+      sumW += w;
+    }
+    let maxW = 0;
+    const normWeights = new Map<number, number>();
+    if (sumW > 0) {
+      Array.from(weights.entries()).forEach(([id, w]) => {
+        const wn = w / sumW;
+        normWeights.set(id, wn);
+        if (wn > maxW) maxW = wn;
+      });
+    }
+    // средняя корреляция
+    let avgCorr = 0.2;
+    if (corrById && corrById.size > 1) {
+      const ids = Array.from(normWeights.keys());
+      let cnt = 0; let sum = 0;
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          const rho = corrById.get(ids[i])?.get(ids[j]);
+          if (typeof rho === 'number') { sum += rho; cnt++; }
+        }
+      }
+      if (cnt > 0) avgCorr = sum / cnt;
+    }
+    // эффективное число активов
+    let invSumSq = 0;
+    Array.from(normWeights.values()).forEach(w => { invSumSq += w * w; });
+    const Neff = invSumSq > 0 ? 1 / invSumSq : products.length;
+
+    const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
+    const maxSkuShare = clamp(2 * Math.max(maxW, 0.01) * (1 - Math.max(-1, Math.min(1, avgCorr))), 0.10, 0.50);
+    const minDistinctSkus = Math.max(
+      Math.ceil(1 / Math.max(maxSkuShare, 0.01)),
+      Math.ceil(0.7 * Neff)
+    );
+
+    return {
+      ...portfolioConstraints,
+      totalBudget: budgetInput || portfolioConstraints.totalBudget,
+      maxSkuShare,
+      minDistinctSkus
+    } as PortfolioConstraints;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, mlForecasts, corrById, weeks, budgetInput, portfolioConstraints.totalBudget]);
   
   // Загрузка ML прогнозов
   React.useEffect(() => {
@@ -203,7 +265,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     
     const optimizer = new PortfolioOptimizer(
       productsWithMl,
-      { ...portfolioConstraints, totalBudget: budgetInput || portfolioConstraints.totalBudget },
+      dynamicConstraints,
       rushProb,
       rushSave,
       hold,
@@ -240,7 +302,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
         capital: optimal.totalInvestment - current.totalInvestment
       }
     };
-  }, [products, portfolioConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts]);
+  }, [products, dynamicConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts]);
 
   const recommendations = useMemo(() => {
     if (!portfolioOptimization) return [] as Array<{ id: number; sku: string; name: string; qty: number; invest: number; value: number; share: number }>;
