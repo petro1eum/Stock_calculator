@@ -6,6 +6,7 @@ import { inverseNormal, blackScholesCall } from '../utils/mathFunctions';
 import { calculateExpectedRevenue, calculateVolatility, mcDemandLoss, getEffectivePurchasePrice, optimizeQuantity } from '../utils/inventoryCalculations';
 import { PortfolioOptimizer } from '../utils/portfolioOptimization';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Scatter, ScatterChart } from 'recharts';
+import { supabase } from '../utils/supabaseClient';
 
 interface ScenariosTabProps {
   products: Product[];
@@ -58,11 +59,6 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     
     const loadForecasts = async () => {
       try {
-        const { createClient } = await import('@supabase/supabase-js');
-        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL!;
-        const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY!;
-        const supabase = createClient(supabaseUrl, supabaseKey);
-        
         const { data: user } = await supabase.auth.getUser();
         if (!user?.user?.id) return;
         
