@@ -4,5 +4,9 @@
   "installCommand": "cd stock-calculator && npm install",
   "rewrites": [
     { "source": "/api/:path*", "destination": "/stock-calculator/api/:path*" }
+  ],
+  "crons": [
+    { "path": "/stock-calculator/api/demand-refresh", "schedule": "0 2 * * *" },
+    { "path": "/stock-calculator/api/portfolio-refresh", "schedule": "30 2 * * *" }
   ]
 }
