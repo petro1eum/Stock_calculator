@@ -443,49 +443,11 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                 </div>
                 <div>
                   <span className="text-sm text-gray-600">Оптимум (по смеси):</span>
-                  <div className="font-semibold">{fmt((() => {
-                    const scenariosInput = scenarios.map(s => ({ probability: s.probability, muWeekMultiplier: s.muWeekMultiplier, sigmaWeekMultiplier: s.sigmaWeekMultiplier }));
-                    const evalQ = (q: number) => strictBSMixtureOptionValue(
-                      q,
-                      useMLForecasts && mlForecasts[product.sku]?.mu ? mlForecasts[product.sku].mu : product.muWeek,
-                      useMLForecasts && mlForecasts[product.sku]?.sigma ? mlForecasts[product.sku].sigma : product.sigmaWeek,
-                      weeks,
-                      product.purchase,
-                      product.margin,
-                      rushProb,
-                      rushSave,
-                      scenariosInput as any,
-                      r,
-                      hold,
-                      product.volumeDiscounts,
-                      monteCarloParams
-                    );
-                    const { bestQ } = optimizeQuantity(product.minOrderQty || 0, product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits, Math.max(1, Math.round((product.muWeek||1)/10)), evalQ);
-                    return bestQ;
-                  })())} шт</div>
+                  <div className="font-semibold">{fmt(weightedOptimal.optQ)} шт</div>
                 </div>
                 <div>
                   <span className="text-sm text-gray-600">Ценность опциона (смесь):</span>
-                  <div className="font-semibold">₽{fmt((_ => {
-                    const scenariosInput = scenarios.map(s => ({ probability: s.probability, muWeekMultiplier: s.muWeekMultiplier, sigmaWeekMultiplier: s.sigmaWeekMultiplier }));
-                    const qEval = (_q: number) => strictBSMixtureOptionValue(
-                      _q,
-                      useMLForecasts && mlForecasts[product.sku]?.mu ? mlForecasts[product.sku].mu : product.muWeek,
-                      useMLForecasts && mlForecasts[product.sku]?.sigma ? mlForecasts[product.sku].sigma : product.sigmaWeek,
-                      weeks,
-                      product.purchase,
-                      product.margin,
-                      rushProb,
-                      rushSave,
-                      scenariosInput as any,
-                      r,
-                      hold,
-                      product.volumeDiscounts,
-                      monteCarloParams
-                    );
-                    const { bestValue } = optimizeQuantity(product.minOrderQty || 0, product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits, Math.max(5, Math.round((product.muWeek||1)/5)), qEval);
-                    return Math.max(0, bestValue);
-                  })())}</div>
+                  <div className="font-semibold">₽{fmt(weightedOptimal.optValue)}</div>
                 </div>
               </div>
             )}
