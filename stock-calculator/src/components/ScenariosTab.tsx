@@ -34,6 +34,8 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
 }) => {
   const [selectedProduct, setSelectedProduct] = useState<number | null>(products[0]?.id || null);
   const [activeView, setActiveView] = useState<'scenarios' | 'portfolio'>('scenarios');
+  const [useMLForecasts, setUseMLForecasts] = useState(false);
+  const [mlForecasts, setMlForecasts] = useState<Record<string, { mu: number; sigma: number }>>({});
   
   // Состояние для портфельной оптимизации
   const [portfolioConstraints, setPortfolioConstraints] = useState<PortfolioConstraints>({
@@ -50,13 +52,61 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   
   const product = products.find(p => p.id === selectedProduct);
   
+  // Загрузка ML прогнозов
+  React.useEffect(() => {
+    if (!useMLForecasts) return;
+    
+    const loadForecasts = async () => {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL!;
+        const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        
+        const { data: user } = await supabase.auth.getUser();
+        if (!user?.user?.id) return;
+        
+        const nextMonday = new Date();
+        nextMonday.setDate(nextMonday.getDate() + (8 - nextMonday.getDay()) % 7);
+        nextMonday.setHours(0, 0, 0, 0);
+        
+        const { data } = await supabase
+          .from('wb_demand_forecast')
+          .select('sku, mu, sigma')
+          .eq('user_id', user.user.id)
+          .eq('week_start', nextMonday.toISOString().split('T')[0]);
+        
+        if (data) {
+          const forecasts: Record<string, { mu: number; sigma: number }> = {};
+          data.forEach(row => {
+            forecasts[row.sku] = { mu: Number(row.mu), sigma: Number(row.sigma) };
+          });
+          setMlForecasts(forecasts);
+        }
+      } catch (error) {
+        console.error('Failed to load ML forecasts:', error);
+      }
+    };
+    
+    loadForecasts();
+  }, [useMLForecasts]);
+  
   // Расчет для каждого сценария
   const scenarioResults = useMemo(() => {
     if (!product) return [];
     
     return scenarios.map(scenario => {
-      const adjustedMuWeek = product.muWeek * scenario.muWeekMultiplier;
-      const adjustedSigmaWeek = product.sigmaWeek * scenario.sigmaWeekMultiplier;
+      // Используем ML прогнозы если доступны
+      let adjustedMuWeek = product.muWeek;
+      let adjustedSigmaWeek = product.sigmaWeek;
+      
+      if (useMLForecasts && mlForecasts[product.sku]) {
+        adjustedMuWeek = mlForecasts[product.sku].mu;
+        adjustedSigmaWeek = mlForecasts[product.sku].sigma;
+      }
+      
+      adjustedMuWeek *= scenario.muWeekMultiplier;
+      adjustedSigmaWeek *= scenario.sigmaWeekMultiplier;
       
       // Пересчитываем оптимальные параметры для сценария
       const step = Math.max(1, Math.round(adjustedMuWeek / 10));
@@ -91,7 +141,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
         demandStd: adjustedSigmaWeek * Math.sqrt(weeks)
       };
     });
-  }, [product, scenarios, maxUnits, rushProb, rushSave, hold, r, weeks, csl, monteCarloParams]);
+  }, [product, scenarios, maxUnits, rushProb, rushSave, hold, r, weeks, csl, monteCarloParams, useMLForecasts, mlForecasts]);
   
   // Взвешенные оптимальные параметры
   const weightedOptimal = useMemo(() => {
@@ -120,8 +170,15 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   const portfolioOptimization = useMemo(() => {
     if (products.length === 0) return null;
     
+    // Если используем ML прогнозы, обновляем muWeek и sigmaWeek у продуктов
+    const productsWithMl = useMLForecasts ? products.map(p => ({
+      ...p,
+      muWeek: mlForecasts[p.sku]?.mu || p.muWeek,
+      sigmaWeek: mlForecasts[p.sku]?.sigma || p.sigmaWeek
+    })) : products;
+    
     const optimizer = new PortfolioOptimizer(
-      products,
+      productsWithMl,
       portfolioConstraints,
       rushProb,
       rushSave,
@@ -157,7 +214,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
         capital: optimal.totalInvestment - current.totalInvestment
       }
     };
-  }, [products, portfolioConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams]);
+  }, [products, portfolioConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts]);
   
   if (products.length === 0) {
     return (
@@ -203,6 +260,36 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
           {/* Выбор товара */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold mb-4">Сценарный анализ</h3>
+            
+            {/* ML переключатель для сценариев */}
+            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700">Источник прогнозов</h4>
+                  <p className="text-xs text-gray-500">
+                    {useMLForecasts ? 'ML модель' : 'Исторические данные'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setUseMLForecasts(!useMLForecasts)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    useMLForecasts ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      useMLForecasts ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              {useMLForecasts && Object.keys(mlForecasts).length > 0 && (
+                <p className="text-xs text-green-600 mt-2">
+                  ✓ Загружено {Object.keys(mlForecasts).length} прогнозов
+                </p>
+              )}
+            </div>
+            
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Выберите товар для анализа
@@ -224,11 +311,15 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded">
                 <div>
                   <span className="text-sm text-gray-600">Базовый спрос/нед:</span>
-                  <div className="font-semibold">{fmt(product.muWeek)} ± {fmt(product.sigmaWeek)}</div>
+                  <div className="font-semibold">
+                    {useMLForecasts && mlForecasts[product.sku] 
+                      ? `${fmt(mlForecasts[product.sku].mu)} ± ${fmt(mlForecasts[product.sku].sigma)} (ML)`
+                      : `${fmt(product.muWeek)} ± ${fmt(product.sigmaWeek)}`}
+                  </div>
                 </div>
                 <div>
                   <span className="text-sm text-gray-600">Закуп/Маржа:</span>
-                  <div className="font-semibold">${product.purchase} / ${product.margin}</div>
+                  <div className="font-semibold">₽{product.purchase} / ₽{product.margin}</div>
                 </div>
                 <div>
                   <span className="text-sm text-gray-600">Текущий оптимум:</span>
@@ -236,7 +327,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                 </div>
                 <div>
                   <span className="text-sm text-gray-600">Ценность опциона:</span>
-                  <div className="font-semibold">${fmt(product.optValue)}</div>
+                  <div className="font-semibold">₽{fmt(product.optValue)}</div>
                 </div>
               </div>
             )}
@@ -440,6 +531,38 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
           {/* Портфельная оптимизация */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold mb-4">Настройки портфеля</h3>
+            
+            {/* ML переключатель */}
+            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700">Источник прогнозов спроса</h4>
+                  <p className="text-xs text-gray-500">
+                    {useMLForecasts 
+                      ? 'ML модель (EMA + сезонность)' 
+                      : 'Исторические данные (среднее + стандартное отклонение)'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setUseMLForecasts(!useMLForecasts)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    useMLForecasts ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      useMLForecasts ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              {useMLForecasts && Object.keys(mlForecasts).length > 0 && (
+                <p className="text-xs text-green-600 mt-2">
+                  ✓ Загружено {Object.keys(mlForecasts).length} прогнозов
+                </p>
+              )}
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
