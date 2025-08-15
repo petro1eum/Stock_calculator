@@ -506,7 +506,12 @@ export const strictBSMixtureOptionValue = (
   const T = weeks / 52;
   const K = q * effectivePurchase * (1 + r * T) + q * hold * weeks;
 
-  const trialsBase = Math.max(5000, monteCarloParams?.iterations || 0);
+  // ограничиваем нагрузки: итерации для Монте‑Карло в пределах [300..2000]
+  const trialsBase = (() => {
+    const it = monteCarloParams?.iterations;
+    if (typeof it === 'number' && isFinite(it) && it > 0) return Math.min(2000, Math.max(300, Math.floor(it)));
+    return 1000;
+  })();
   let total = 0;
 
   for (const s of scenarios) {

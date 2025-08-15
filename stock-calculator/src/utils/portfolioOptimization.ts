@@ -161,7 +161,7 @@ export class PortfolioOptimizer {
           p.volumeDiscounts,
           this.monteCarloParams
         );
-        const { bestQ, bestValue } = optimizeQuantity(Math.max(0, minQty), Math.max(0, upperBound), Math.max(1, Math.round((p.muWeek || 1) / 10)), evalQ);
+        const { bestQ, bestValue } = optimizeQuantity(Math.max(0, minQty), Math.max(0, upperBound), Math.max(5, Math.round((p.muWeek || 1) / 5)), evalQ);
         const denom = Math.max(1, bestQ * unitCostApprox);
         const score = bestValue / denom;
         return { ...np, score, bestQ, bestValue } as any;

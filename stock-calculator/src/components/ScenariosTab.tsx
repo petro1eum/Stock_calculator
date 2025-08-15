@@ -483,7 +483,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       product.volumeDiscounts,
                       monteCarloParams
                     );
-                    const { bestValue } = optimizeQuantity(product.minOrderQty || 0, product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits, Math.max(1, Math.round((product.muWeek||1)/10)), qEval);
+                    const { bestValue } = optimizeQuantity(product.minOrderQty || 0, product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits, Math.max(5, Math.round((product.muWeek||1)/5)), qEval);
                     return Math.max(0, bestValue);
                   })())}</div>
                 </div>

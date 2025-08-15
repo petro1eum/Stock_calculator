@@ -5,13 +5,33 @@ const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || process.env.SUPABASE_
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE as string;
 const admin = createClient(SUPABASE_URL as string, SERVICE_ROLE, { auth: { persistSession: false } });
 
-function toWeekStart(d: Date): number {
-  const dt = new Date(d);
-  const day = dt.getDay();
+// Convert any timestamp to Europe/Moscow week start (Mon 00:00 MSK)
+function toWeekStartMSK(d: Date): number {
+  const mskOffsetMin = 3 * 60; // UTC+3
+  const utcMs = d.getTime();
+  const mskMs = utcMs + mskOffsetMin * 60 * 1000;
+  const m = new Date(mskMs);
+  const day = m.getUTCDay();
   const diff = (day + 6) % 7; // Monday start
-  dt.setDate(dt.getDate() - diff);
-  dt.setHours(0, 0, 0, 0);
-  return dt.getTime();
+  m.setUTCDate(m.getUTCDate() - diff);
+  m.setUTCHours(0, 0, 0, 0);
+  return m.getTime() - mskOffsetMin * 60 * 1000; // return UTC ms aligned to MSK week start
+}
+
+function parseDateToUTC(ds: any): Date | null {
+  if (!ds || typeof ds !== 'string') return null;
+  // normalize common WB formats
+  try {
+    // If has trailing Z or timezone, Date can parse directly
+    const d = new Date(ds);
+    if (!isNaN(d.getTime())) return d;
+  } catch {}
+  try {
+    const s = ds.slice(0, 19).replace(' ', 'T');
+    const d = new Date(s + 'Z');
+    if (!isNaN(d.getTime())) return d;
+  } catch {}
+  return null;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -37,7 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const now = new Date();
     const weeks: number[] = [];
     for (let w = horizon - 1; w >= 0; w--) {
-      weeks.push(toWeekStart(new Date(now.getTime() - w * 7 * 24 * 60 * 60 * 1000)));
+      weeks.push(toWeekStartMSK(new Date(now.getTime() - w * 7 * 24 * 60 * 60 * 1000)));
     }
 
     // Load sales
@@ -50,21 +70,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (sErr) return res.status(500).json({ error: sErr.message });
 
     const salesBuckets = Array(horizon).fill(0);
+    const seen = new Set<string>();
     for (const r of salesRows || []) {
       const raw: any = r.raw || {};
       const ds = raw.date || raw.acceptanceDate || raw.saleDt || raw.lastChangeDate;
-      if (!ds) continue;
-      const t = new Date(ds).getTime();
-      if (!isFinite(t)) continue;
-      const ws = toWeekStart(new Date(t));
+      const d = parseDateToUTC(ds);
+      if (!d) continue;
+      // Exclude returns/negative payouts
+      const forPay = Number(raw.forPay || 0);
+      if (forPay < 0) continue;
+      const t = d.getTime();
+      const ws = toWeekStartMSK(new Date(t));
       const idx = weeks.indexOf(ws);
       if (idx < 0) continue;
-      let units = Number(raw.quantity || 0);
-      if (!units) {
-        const revenue = Number(raw.totalPrice || raw.forPay || 0) || 0;
-        const price = Number(raw.retailPrice || raw.priceWithDisc || 0) || 0;
-        if (revenue > 0 && price > 0) units = revenue / price;
+      // Dedup by WB sale id if present
+      const key = String(raw.srid || raw.saleID || raw.orderId || '') + '|' + (raw.barcode || '') + '|' + (raw.forPay || raw.totalPrice || 0) + '|' + (raw.priceWithDisc || raw.retailPrice || 0) + '|' + (ds || '');
+      if (key.trim() && seen.has(key)) continue;
+      if (key.trim()) seen.add(key);
+      // Units
+      let units = Number(raw.quantity || raw.qty || 0);
+      if (!units || !isFinite(units)) {
+        const revenue = Number(raw.forPay || raw.totalPrice || 0) || 0;
+        const price1 = Number(raw.priceWithDisc || 0);
+        const price2 = Number(raw.retailPrice || 0);
+        const denom = price1 > 0 ? price1 : (price2 > 0 ? price2 : 0);
+        if (revenue > 0 && denom > 0) units = Math.round(revenue / denom);
       }
+      if (!isFinite(units)) units = 0;
       salesBuckets[idx] += Math.max(0, units);
     }
 
@@ -80,9 +112,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const availDays = Array(horizon).fill(0);
     const daysCount = Array(horizon).fill(0);
     for (const r of stockRows || []) {
-      const t = new Date(r.date).getTime();
+      const d = parseDateToUTC(r.date);
+      if (!d) continue;
+      const t = d.getTime();
       if (!isFinite(t)) continue;
-      const ws = toWeekStart(new Date(t));
+      const ws = toWeekStartMSK(new Date(t));
       const idx = weeks.indexOf(ws);
       if (idx < 0) continue;
       availDays[idx] += (Number(r.quantity || 0) > 0) ? 1 : 0;
@@ -110,7 +144,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       sku,
-      weeksISO: weeks.map(ws => new Date(ws).toISOString().slice(0, 10)),
+      weeksISO: weeks.map(ws => new Date(ws + 3*60*60*1000).toISOString().slice(0, 10)),
       units: salesBuckets,
       availability,
       adjustedUnits: adjusted,
