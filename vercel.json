@@ -7,7 +7,6 @@
   ],
   "crons": [
     { "path": "/stock-calculator/api/demand-refresh", "schedule": "0 2 * * *" },
-    { "path": "/stock-calculator/api/portfolio-refresh", "schedule": "30 2 * * *" },
-    { "path": "/stock-calculator/api/weekly-refresh", "schedule": "15 2 * * *" }
+    { "path": "/stock-calculator/api/weekly-refresh", "schedule": "30 2 * * *" }
   ]
 }
