@@ -9,7 +9,7 @@ import {
   DeliverySchedule
 } from '../types/portfolio';
 import { inverseNormal, blackScholesCall } from './mathFunctions';
-import { getEffectivePurchasePrice } from './inventoryCalculations';
+import { getEffectivePurchasePrice, optimizeQuantity, strictBSMixtureOptionValue } from './inventoryCalculations';
 
 // Валюты и их волатильности (базовые значения)
 const CURRENCIES: Map<string, Currency> = new Map([
@@ -41,7 +41,9 @@ export class PortfolioOptimizer {
     private weeks: number,
     private monteCarloParams: any,
     // Опционально: ковариации/корреляции из ProbStates. Формат: productId -> (productId -> rho)
-    private probStatesCorrById?: Map<number, Map<number, number>>
+    private probStatesCorrById?: Map<number, Map<number, number>>,
+    // Опционально: сценарии для строгого Black‑Scholes
+    private bsScenarios?: Array<{ probability: number; muWeekMultiplier: number; sigmaWeekMultiplier: number }>
   ) {}
 
   // Построение недельных рядов выручки (₽) для каждого товара, для оценки ковариаций
@@ -159,26 +161,46 @@ export class PortfolioOptimizer {
     for (const product of rankedProducts) {
       const originalProduct = product.originalProduct;
       
-      // Сколько можем купить?
+      // Бюджетные и складские ограничения
       const perSkuBudgetCap = (this.constraints.totalBudget * maxShare);
-      const remainingPerSku = perSkuBudgetCap; // на каждый новый SKU не больше cap
-      const maxByBudget = Math.floor(Math.min(remainingBudget, remainingPerSku) / product.K);
+      const remainingPerSku = perSkuBudgetCap;
+      const unitCostApprox = Math.max(1, originalProduct.purchase || product.K);
+      const maxByBudget = Math.floor(Math.min(remainingBudget, remainingPerSku) / unitCostApprox);
       const maxBySpace = Math.floor(remainingSpace / (product.volume || 1));
       const maxByConstraints = Math.min(maxByBudget, maxBySpace);
       
-      // Учитываем ограничения продукта
       const minQty = originalProduct.minOrderQty || 0;
-      const maxQty = originalProduct.maxStorageQty || Infinity;
-      
-      // Оптимальное количество для этого товара
-      const optimalQty = Math.min(
-        Math.max(originalProduct.optQ || 0, minQty),
-        Math.min(maxQty, maxByConstraints)
+      const maxQty = isFinite(originalProduct.maxStorageQty || NaN) ? (originalProduct.maxStorageQty as number) : Infinity;
+      const upperBound = Math.max(0, Math.min(maxByConstraints, isFinite(maxQty) ? maxQty : maxByConstraints));
+      if (upperBound <= 0) continue;
+
+      // Строгая BS по смеси сценариев для данного товара
+      const scenarios = (this.bsScenarios && this.bsScenarios.length > 0)
+        ? this.bsScenarios
+        : [{ probability: 1, muWeekMultiplier: 1, sigmaWeekMultiplier: 1 }];
+
+      const evalQ = (q: number) => strictBSMixtureOptionValue(
+        q,
+        Math.max(0, originalProduct.muWeek || 0),
+        Math.max(0, originalProduct.sigmaWeek || 0),
+        this.weeks,
+        Math.max(0, originalProduct.purchase || 0),
+        Math.max(0, originalProduct.margin || 0),
+        this.rushProb,
+        this.rushSave,
+        scenarios,
+        this.r,
+        this.hold,
+        originalProduct.volumeDiscounts,
+        this.monteCarloParams
       );
+
+      const { bestQ } = optimizeQuantity(Math.max(0, minQty), Math.max(0, upperBound), Math.max(1, Math.round((originalProduct.muWeek || 1) / 10)), evalQ);
+      const optimalQty = Math.min(upperBound, Math.max(minQty, bestQ));
       
       if (optimalQty > 0) {
         allocation.set(product.id, optimalQty);
-        remainingBudget -= optimalQty * product.K;
+        remainingBudget -= optimalQty * unitCostApprox;
         remainingSpace -= optimalQty * (product.volume || 1);
         kindsChosen += 1;
       }

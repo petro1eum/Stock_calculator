@@ -3,7 +3,7 @@ import { Product, Scenario } from '../types';
 import { PortfolioConstraints, PortfolioAllocation } from '../types/portfolio';
 import { formatNumber } from '../utils/mathFunctions';
 import { inverseNormal, blackScholesCall } from '../utils/mathFunctions';
-import { calculateExpectedRevenue, calculateVolatility, mcDemandLoss, getEffectivePurchasePrice, optimizeQuantity } from '../utils/inventoryCalculations';
+import { calculateExpectedRevenue, calculateVolatility, mcDemandLoss, getEffectivePurchasePrice, optimizeQuantity, strictBSMixtureOptionValue } from '../utils/inventoryCalculations';
 import { PortfolioOptimizer } from '../utils/portfolioOptimization';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Scatter, ScatterChart } from 'recharts';
 import { supabase } from '../utils/supabaseClient';
@@ -37,6 +37,9 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   const [activeView, setActiveView] = useState<'scenarios' | 'portfolio'>('scenarios');
   const [useMLForecasts, setUseMLForecasts] = useState(false);
   const [mlForecasts, setMlForecasts] = useState<Record<string, { mu: number; sigma: number }>>({});
+  const [budgetInput, setBudgetInput] = useState<number>(1000000);
+  const [showRecommendations, setShowRecommendations] = useState<boolean>(false);
+  const [corrById, setCorrById] = useState<Map<number, Map<number, number>> | undefined>(undefined);
   
   // Состояние для портфельной оптимизации
   const [portfolioConstraints, setPortfolioConstraints] = useState<PortfolioConstraints>({
@@ -59,26 +62,10 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     
     const loadForecasts = async () => {
       try {
-        const { data: user } = await supabase.auth.getUser();
-        if (!user?.user?.id) return;
-        
-        const nextMonday = new Date();
-        nextMonday.setDate(nextMonday.getDate() + (8 - nextMonday.getDay()) % 7);
-        nextMonday.setHours(0, 0, 0, 0);
-        
-        const { data } = await supabase
-          .from('wb_demand_forecast')
-          .select('sku, mu, sigma')
-          .eq('user_id', user.user.id)
-          .eq('week_start', nextMonday.toISOString().split('T')[0]);
-        
-        if (data) {
-          const forecasts: Record<string, { mu: number; sigma: number }> = {};
-          data.forEach(row => {
-            forecasts[row.sku] = { mu: Number(row.mu), sigma: Number(row.sigma) };
-          });
-          setMlForecasts(forecasts);
-        }
+        const resp = await fetch('/api/forecasts');
+        if (!resp.ok) throw new Error(await resp.text());
+        const json = await resp.json();
+        setMlForecasts(json.forecasts || {});
       } catch (error) {
         console.error('Failed to load ML forecasts:', error);
       }
@@ -86,6 +73,47 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     
     loadForecasts();
   }, [useMLForecasts]);
+
+  // Загрузка корреляций (ProbStates) из Supabase, если доступны
+  React.useEffect(() => {
+    const loadCorr = async () => {
+      try {
+        // Получаем последнюю матрицу корреляций
+        await fetch('/api/portfolio-refresh?horizonWeeks=26'); // триггер на пересчет (не критично)
+        const cov = await fetch('/api/portfolio-cov');
+        if (cov.ok) {
+          const json = await cov.json();
+          if (Array.isArray(json.skus) && Array.isArray(json.matrix)) {
+            const skuToId = new Map(products.map(p => [String(p.sku), p.id] as [string, number]));
+            const m = new Map<number, Map<number, number>>();
+            json.skus.forEach((sku: string, i: number) => {
+              const idI = skuToId.get(String(sku));
+              if (!idI) return;
+              const row = new Map<number, number>();
+              (json.matrix[i] || []).forEach((rho: number, j: number) => {
+                const idJ = skuToId.get(String(json.skus[j]));
+                if (!idJ) return;
+                row.set(idJ, Number(rho));
+              });
+              m.set(idI, row);
+            });
+            setCorrById(m);
+            return;
+          }
+        }
+        // fallback: единичная матрица
+        const ids = products.map(p => p.id);
+        const ident = new Map<number, Map<number, number>>();
+        ids.forEach(i => {
+          const row = new Map<number, number>();
+          ids.forEach(j => row.set(j, i === j ? 1 : 0));
+          ident.set(i, row);
+        });
+        setCorrById(ident);
+      } catch {}
+    };
+    loadCorr();
+  }, [products]);
   
   // Расчет для каждого сценария
   const scenarioResults = useMemo(() => {
@@ -175,13 +203,15 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     
     const optimizer = new PortfolioOptimizer(
       productsWithMl,
-      portfolioConstraints,
+      { ...portfolioConstraints, totalBudget: budgetInput || portfolioConstraints.totalBudget },
       rushProb,
       rushSave,
       hold,
       r,
       weeks,
-      monteCarloParams
+      monteCarloParams,
+      corrById,
+      scenarios.map(s => ({ probability: s.probability, muWeekMultiplier: s.muWeekMultiplier, sigmaWeekMultiplier: s.sigmaWeekMultiplier })) as any
     );
     
     const optimal = optimizer.optimize();
@@ -211,6 +241,38 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
       }
     };
   }, [products, portfolioConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts]);
+
+  const recommendations = useMemo(() => {
+    if (!portfolioOptimization) return [] as Array<{ id: number; sku: string; name: string; qty: number; invest: number; value: number; share: number }>;
+    const alloc = portfolioOptimization.optimal.allocations;
+    const total = portfolioOptimization.optimal.totalInvestment || 1;
+    const rows: Array<{ id: number; sku: string; name: string; qty: number; invest: number; value: number; share: number }> = [];
+    Array.from(alloc.entries()).forEach(([pid, qty]) => {
+      const p = products.find(pp => pp.id === pid);
+      if (!p || (qty || 0) <= 0) return;
+      const invest = (qty || 0) * (p.purchase || 0);
+      // Строгая ценность опциона при выбранном qty
+      const scenariosInput = scenarios.map(s => ({ probability: s.probability, muWeekMultiplier: s.muWeekMultiplier, sigmaWeekMultiplier: s.sigmaWeekMultiplier }));
+      const v = strictBSMixtureOptionValue(
+        qty,
+        useMLForecasts && mlForecasts[p.sku]?.mu ? mlForecasts[p.sku].mu : p.muWeek,
+        useMLForecasts && mlForecasts[p.sku]?.sigma ? mlForecasts[p.sku].sigma : p.sigmaWeek,
+        weeks,
+        p.purchase,
+        p.margin,
+        rushProb,
+        rushSave,
+        scenariosInput as any,
+        r,
+        hold,
+        p.volumeDiscounts,
+        monteCarloParams
+      );
+      const value = Math.max(0, v);
+      rows.push({ id: pid, sku: p.sku, name: p.name, qty: qty || 0, invest, value, share: invest / total });
+    });
+    return rows.sort((a, b) => b.invest - a.invest);
+  }, [portfolioOptimization, products]);
   
   if (products.length === 0) {
     return (
@@ -318,12 +380,50 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                   <div className="font-semibold">₽{product.purchase} / ₽{product.margin}</div>
                 </div>
                 <div>
-                  <span className="text-sm text-gray-600">Текущий оптимум:</span>
-                  <div className="font-semibold">{fmt(product.optQ)} шт</div>
+                  <span className="text-sm text-gray-600">Оптимум (по смеси):</span>
+                  <div className="font-semibold">{fmt((() => {
+                    const scenariosInput = scenarios.map(s => ({ probability: s.probability, muWeekMultiplier: s.muWeekMultiplier, sigmaWeekMultiplier: s.sigmaWeekMultiplier }));
+                    const evalQ = (q: number) => strictBSMixtureOptionValue(
+                      q,
+                      useMLForecasts && mlForecasts[product.sku]?.mu ? mlForecasts[product.sku].mu : product.muWeek,
+                      useMLForecasts && mlForecasts[product.sku]?.sigma ? mlForecasts[product.sku].sigma : product.sigmaWeek,
+                      weeks,
+                      product.purchase,
+                      product.margin,
+                      rushProb,
+                      rushSave,
+                      scenariosInput as any,
+                      r,
+                      hold,
+                      product.volumeDiscounts,
+                      monteCarloParams
+                    );
+                    const { bestQ } = optimizeQuantity(product.minOrderQty || 0, product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits, Math.max(1, Math.round((product.muWeek||1)/10)), evalQ);
+                    return bestQ;
+                  })())} шт</div>
                 </div>
                 <div>
-                  <span className="text-sm text-gray-600">Ценность опциона:</span>
-                  <div className="font-semibold">₽{fmt(product.optValue)}</div>
+                  <span className="text-sm text-gray-600">Ценность опциона (смесь):</span>
+                  <div className="font-semibold">₽{fmt((_ => {
+                    const scenariosInput = scenarios.map(s => ({ probability: s.probability, muWeekMultiplier: s.muWeekMultiplier, sigmaWeekMultiplier: s.sigmaWeekMultiplier }));
+                    const qEval = (_q: number) => strictBSMixtureOptionValue(
+                      _q,
+                      useMLForecasts && mlForecasts[product.sku]?.mu ? mlForecasts[product.sku].mu : product.muWeek,
+                      useMLForecasts && mlForecasts[product.sku]?.sigma ? mlForecasts[product.sku].sigma : product.sigmaWeek,
+                      weeks,
+                      product.purchase,
+                      product.margin,
+                      rushProb,
+                      rushSave,
+                      scenariosInput as any,
+                      r,
+                      hold,
+                      product.volumeDiscounts,
+                      monteCarloParams
+                    );
+                    const { bestValue } = optimizeQuantity(product.minOrderQty || 0, product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits, Math.max(1, Math.round((product.muWeek||1)/10)), qEval);
+                    return Math.max(0, bestValue);
+                  })())}</div>
                 </div>
               </div>
             )}
@@ -527,6 +627,45 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
           {/* Портфельная оптимизация */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold mb-4">Настройки портфеля</h3>
+
+            {/* Доступный бюджет и рекомендации */}
+            <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+              <div className="flex flex-col md:flex-row md:items-end md:space-x-4 space-y-2 md:space-y-0">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Доступный бюджет (₽)</label>
+                  <input type="number" value={budgetInput} onChange={e=>setBudgetInput(Number(e.target.value)||0)} className="w-60 p-2 border rounded" />
+                </div>
+                <button onClick={()=>setShowRecommendations(true)} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Получить рекомендации</button>
+              </div>
+              {showRecommendations && portfolioOptimization && (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-600">
+                        <th className="pr-4 py-2">SKU</th>
+                        <th className="pr-4 py-2">Название</th>
+                        <th className="pr-4 py-2">Кол-во</th>
+                        <th className="pr-4 py-2">Инвестиции</th>
+                        <th className="pr-4 py-2">Ценность опциона</th>
+                        <th className="pr-4 py-2">Доля бюджета</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recommendations.map(r=> (
+                        <tr key={r.id} className="border-t">
+                          <td className="pr-4 py-2 whitespace-nowrap">{r.sku}</td>
+                          <td className="pr-4 py-2">{r.name}</td>
+                          <td className="pr-4 py-2">{fmt(r.qty)}</td>
+                          <td className="pr-4 py-2">₽{fmt(r.invest)}</td>
+                          <td className="pr-4 py-2">₽{fmt(r.value)}</td>
+                          <td className="pr-4 py-2">{(r.share*100).toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
             
             {/* ML переключатель */}
             <div className="mb-4 p-4 bg-gray-50 rounded-lg">

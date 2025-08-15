@@ -478,3 +478,68 @@ export const optimizeQuantity = (
   }
   return { bestQ, bestValue: bestV };
 };
+
+// Строгая оценка BS-ценности для смеси сценариев: Σ p_s · BS_s(q)
+// Для каждого сценария оцениваем моменты выручки через Монте‑Карло (μ_rev, σ_rev)
+// затем переводим в логнормальную волатильность: sigma_BS = sqrt(ln(1 + (σ/μ)^2))
+export const strictBSMixtureOptionValue = (
+  q: number,
+  baseMuWeek: number,
+  baseSigmaWeek: number,
+  weeks: number,
+  purchase: number,
+  margin: number,
+  rushProb: number,
+  rushSave: number,
+  scenarios: Array<{ probability: number; muWeekMultiplier: number; sigmaWeekMultiplier: number }>,
+  r: number,
+  hold: number,
+  volumeDiscounts?: VolumeDiscount[],
+  monteCarloParams?: MonteCarloParams
+): number => {
+  if (q <= 0 || weeks <= 0) return 0;
+
+  // эффективная закупочная цена с учетом скидок
+  const effectivePurchase = getEffectivePurchasePrice(purchase, q, volumeDiscounts);
+  const fullPrice = effectivePurchase + margin;
+  const rushUnitRevenue = Math.max(fullPrice - rushSave, 0);
+  const T = weeks / 52;
+  const K = q * effectivePurchase * (1 + r * T) + q * hold * weeks;
+
+  const trialsBase = Math.max(5000, monteCarloParams?.iterations || 0);
+  let total = 0;
+
+  for (const s of scenarios) {
+    const muW = Math.max(0, baseMuWeek * (s.muWeekMultiplier || 1));
+    const sigmaW = Math.max(0, baseSigmaWeek * (s.sigmaWeekMultiplier || 1));
+    const mean = muW * weeks;
+    const std = sigmaW * Math.sqrt(weeks);
+
+    // Монте‑Карло по выручке
+    let sum = 0;
+    let sumsq = 0;
+    const trials = trialsBase;
+    let seed = (monteCarloParams?.randomSeed ?? 1234567) + Math.floor(muW * 1000);
+    const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return (seed & 0xfffffff) / 0x10000000; };
+    for (let i = 0; i < trials; i++) {
+      const u1 = Math.max(1e-12, rng());
+      const u2 = Math.max(1e-12, rng());
+      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      const demand = Math.max(0, Math.round(mean + std * z));
+      const normalSales = Math.min(q, demand);
+      const lost = Math.max(0, demand - q);
+      const rushSales = lost * rushProb;
+      const rev = normalSales * fullPrice + rushSales * rushUnitRevenue;
+      sum += rev;
+      sumsq += rev * rev;
+    }
+    const muRev = sum / trials;
+    const varRev = Math.max(0, sumsq / trials - muRev * muRev);
+    const sigmaRev = Math.sqrt(varRev);
+    const sigmaBS = muRev > 0 ? Math.sqrt(Math.log(1 + (sigmaRev / muRev) ** 2)) : 0.2;
+
+    const { optionValue } = blackScholesCall(Math.max(muRev, 1e-6), Math.max(K, 1e-6), T, Math.max(sigmaBS, 1e-6), r);
+    total += (s.probability || 0) * optionValue;
+  }
+  return total;
+};
