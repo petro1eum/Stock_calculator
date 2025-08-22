@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fill WB Costs</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Заполнение wb_costs</h1>
+    <button onclick="fillCosts()">Заполнить данные</button>
+    <div id="output"></div>
+
+    <script>
+        const { createClient } = supabase;
+        // ⚠️ SECURITY: Set these variables manually or load from your .env
+        const supabaseUrl = 'YOUR_SUPABASE_URL_HERE';
+        const supabaseKey = 'YOUR_SUPABASE_ANON_KEY_HERE';
+        const client = createClient(supabaseUrl, supabaseKey);
+
+        async function fillCosts() {
+            const output = document.getElementById('output');
+            output.innerHTML = '<p>Начинаю заполнение...</p>';
+
+            try {
+                // Логинимся с фиктивными данными для получения user_id
+                // Или используем известный user_id
+                const userId = 'YOUR_USER_ID_HERE';
+                const today = new Date().toISOString().split('T')[0] + 'T00:00:00.000Z';
+
+                const costsData = [
+                    {
+                        user_id: userId,
+                        date: today,
+                        sku: 'EXAMPLE_SKU_1',  // example product
+                        purchase_amount: 21,
+                        purchase_currency: 'CNY',
+                        logistics_amount: 0.98,
+                        logistics_currency: 'USD',
+                        fx_rate: 13.0
+                    },
+                    {
+                        user_id: userId,
+                        date: today,
+                        sku: 'EXAMPLE_SKU_2',  // example product
+                        purchase_amount: 25,
+                        purchase_currency: 'CNY',
+                        logistics_amount: null,
+                        logistics_currency: null,
+                        fx_rate: 13.0
+                    },
+                    {
+                        user_id: userId,
+                        date: today,
+                        sku: 'EXAMPLE_SKU_3',  // example product
+                        purchase_amount: 26,
+                        purchase_currency: 'CNY',
+                        logistics_amount: null,
+                        logistics_currency: null,
+                        fx_rate: 13.0
+                    }
+                ];
+
+                for (const item of costsData) {
+                    output.innerHTML += `<p>Записываю SKU ${item.sku}...</p>`;
+                    
+                    const { data, error } = await client
+                        .from('wb_costs')
+                        .upsert(item, { 
+                            onConflict: 'user_id,date,sku',
+                            ignoreDuplicates: false 
+                        });
+
+                    if (error) {
+                        output.innerHTML += `<p style="color: red;">Ошибка для SKU ${item.sku}: ${error.message}</p>`;
+                    } else {
+                        output.innerHTML += `<p style="color: green;">SKU ${item.sku} успешно записан!</p>`;
+                    }
+                }
+
+                output.innerHTML += '<p><strong>Заполнение завершено!</strong></p>';
+
+            } catch (e) {
+                output.innerHTML += `<p style="color: red;">Общая ошибка: ${e.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
