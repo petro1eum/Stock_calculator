@@ -1,25 +1,31 @@
 import { normalCDF } from './mathFunctions';
 import { SeasonalityData, VolumeDiscount, MonteCarloParams, SalesRecord, PurchaseRecord, LogisticsRecord, StockRecord } from '../types';
 import { blackScholesCall } from './mathFunctions';
+import { getCachedWasmModule } from './wasmBridge';
 
 // Monte-Carlo ожидание lost-sales при запасе q
 export const mcDemandLoss = (
-  units: number, 
-  muWeek: number, 
-  sigmaWeek: number, 
-  weeks: number, 
+  units: number,
+  muWeek: number,
+  sigmaWeek: number,
+  weeks: number,
   monteCarloParams: MonteCarloParams
 ): number => {
   const mean = muWeek * weeks;
   const std = sigmaWeek * Math.sqrt(weeks);
-  
-  // Используем настраиваемое количество итераций
+
   const cv = sigmaWeek / Math.max(muWeek, 1);
   const defaultTrials = Math.max(1000, Math.ceil(5000 * cv));
   const actualTrials = monteCarloParams.iterations || defaultTrials;
-  
+
+  // Wasm Fast Path
+  const wasm = getCachedWasmModule();
+  if (wasm) {
+    return wasm.mcDemandLoss(units, muWeek, sigmaWeek, weeks, actualTrials);
+  }
+
   let lostSum = 0;
-  
+
   // Возможность использовать фиксированный seed
   let rng = Math.random;
   if (monteCarloParams.randomSeed !== null) {
@@ -29,7 +35,7 @@ export const mcDemandLoss = (
       return seed / 233280;
     };
   }
-  
+
   for (let i = 0; i < actualTrials; i++) {
     const u1 = rng(), u2 = rng();
     const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
@@ -41,45 +47,45 @@ export const mcDemandLoss = (
 
 // Расчет эффективной цены закупки с учетом скидок за объем
 export const getEffectivePurchasePrice = (
-  basePrice: number, 
-  quantity: number, 
+  basePrice: number,
+  quantity: number,
   volumeDiscounts?: VolumeDiscount[]
 ): number => {
   if (!volumeDiscounts || volumeDiscounts.length === 0) {
     return basePrice;
   }
-  
+
   const sortedDiscounts = [...volumeDiscounts].sort((a, b) => b.qty - a.qty);
   const applicableDiscount = sortedDiscounts.find(d => quantity >= d.qty);
-  
+
   if (applicableDiscount) {
     return basePrice * (1 - applicableDiscount.discount / 100);
   }
-  
+
   return basePrice;
 };
 
 // Расчет ожидаемой выручки
 export const calculateExpectedRevenue = (
-  q: number, 
-  muWeek: number, 
-  sigmaWeek: number, 
-  weeks: number, 
-  purchase: number, 
-  margin: number, 
-  rushProb: number, 
+  q: number,
+  muWeek: number,
+  sigmaWeek: number,
+  weeks: number,
+  purchase: number,
+  margin: number,
+  rushProb: number,
   rushSave: number,
   mcDemandLossFn: typeof mcDemandLoss,
   monteCarloParams: MonteCarloParams
 ): number => {
   if (q === 0) return 0;
-  
+
   const expectedDemand = muWeek * weeks;
   const demandStd = sigmaWeek * Math.sqrt(weeks);
   const fullPrice = purchase + margin;
   // Потери при экстренной закупке: снижаем эффективность rush-продаж на rushSave за единицу
   const rushUnitRevenue = Math.max(fullPrice - rushSave, 0);
-  
+
   // Выбор метода: закрытая форма (по умолчанию) или Монте-Карло
   let method = monteCarloParams?.method ?? 'closed';
   if (method === 'auto') {
@@ -90,7 +96,7 @@ export const calculateExpectedRevenue = (
     const complexSeasonality = false; // признак можно пробрасывать извне при необходимости
     method = (highCV || complexSeasonality) ? 'mc' : 'closed';
   }
-  
+
   if (method === 'mc') {
     // MC-путь: используем внешнюю функцию для ожидания потерь, продажи ограничены q
     const expectedDemand = muWeek * weeks;
@@ -99,7 +105,7 @@ export const calculateExpectedRevenue = (
     const rushSales = expectedLost * rushProb;
     return normalSales * fullPrice + rushSales * rushUnitRevenue;
   }
-  
+
   // Закрытая форма: z = (q - μ) / σ, E[min(q, D)] = q Φ(z) + μ (1 - Φ(z)) - σ φ(z)
   // и E[(D - q)+] = σ φ(z) + (μ - q) (1 - Φ(z))
   if (demandStd <= 0) {
@@ -111,19 +117,19 @@ export const calculateExpectedRevenue = (
   const z = (q - expectedDemand) / demandStd;
   const phi_z = Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
   const Phi_z = normalCDF(z);
-  
+
   const expectedLost = Math.max(0, demandStd * phi_z + (expectedDemand - q) * (1 - Phi_z));
   const expectedSales = Math.max(0, expectedDemand - expectedLost);
   const rushSales = expectedLost * rushProb;
-  
+
   return expectedSales * fullPrice + rushSales * rushUnitRevenue;
 };
 
 // Расчет волатильности для Black-Scholes
 export const calculateVolatility = (
-  muWeek: number, 
-  sigmaWeek: number, 
-  weeks: number, 
+  muWeek: number,
+  sigmaWeek: number,
+  weeks: number,
   q: number,
   rushProb: number = 0,
   currency?: string,
@@ -131,14 +137,14 @@ export const calculateVolatility = (
 ): number => {
   const expectedDemand = muWeek * weeks;
   const demandStd = sigmaWeek * Math.sqrt(weeks);
-  
+
   if (expectedDemand <= 0) return 0.1;
-  
+
   const cvDemand = demandStd / expectedDemand;
   const fillRate = Math.min(1, q / expectedDemand);
   const revenueVolatility = cvDemand * (1 - Math.exp(-2 * fillRate));
   const rushFactor = 1 - 0.2 * rushProb;
-  
+
   // Валютная и логистическая компоненты (как в портфеле)
   const CURRENCY_VOL: Record<string, number> = { RUB: 0.15, USD: 0.20, EUR: 0.18, CNY: 0.12 };
   const LOGISTICS_VOL: Record<string, number> = { domestic: 0.10, china: 0.25, europe: 0.20, usa: 0.22 };
@@ -152,43 +158,43 @@ export const calculateVolatility = (
 
 // Расчет спроса с учетом сезонности
 export const getSeasonalDemand = (
-  baseWeeklyDemand: number, 
-  seasonality?: SeasonalityData, 
+  baseWeeklyDemand: number,
+  seasonality?: SeasonalityData,
   weeksAhead: number = 0
 ): number => {
   if (!seasonality || !seasonality.enabled) {
     return baseWeeklyDemand;
   }
-  
+
   const currentMonth = seasonality.currentMonth;
   const monthsAhead = Math.floor(weeksAhead / 4.33);
   const targetMonth = (currentMonth + monthsAhead) % 12;
   const seasonalFactor = seasonality.monthlyFactors[targetMonth];
-  
+
   return baseWeeklyDemand * seasonalFactor;
 };
 
 // Расчет среднего спроса за период с учетом сезонности
 export const getAverageSeasonalDemand = (
-  baseWeeklyDemand: number, 
-  seasonality: SeasonalityData | undefined, 
+  baseWeeklyDemand: number,
+  seasonality: SeasonalityData | undefined,
   weeks: number
 ): number => {
   if (!seasonality || !seasonality.enabled) {
     return baseWeeklyDemand;
   }
-  
+
   let totalDemand = 0;
   const weeksPerMonth = 4.33;
-  
+
   for (let week = 0; week < weeks; week++) {
     const monthOffset = Math.floor(week / weeksPerMonth);
     const month = (seasonality.currentMonth + monthOffset) % 12;
     totalDemand += baseWeeklyDemand * seasonality.monthlyFactors[month];
   }
-  
+
   return totalDemand / weeks;
-}; 
+};
 
 // Парсинг истории из CSV по типам записей
 export const parseSalesCSV = (csv: string): SalesRecord[] => {
