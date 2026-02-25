@@ -94,8 +94,8 @@ export const calculateExpectedRevenue = (
   if (method === 'mc') {
     // MC-путь: используем внешнюю функцию для ожидания потерь, продажи ограничены q
     const expectedDemand = muWeek * weeks;
-    const normalSales = Math.min(q, expectedDemand);
     const expectedLost = mcDemandLossFn(q, muWeek, sigmaWeek, weeks, monteCarloParams);
+    const normalSales = Math.max(0, expectedDemand - expectedLost);
     const rushSales = expectedLost * rushProb;
     return normalSales * fullPrice + rushSales * rushUnitRevenue;
   }
@@ -112,8 +112,8 @@ export const calculateExpectedRevenue = (
   const phi_z = Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
   const Phi_z = normalCDF(z);
   
-  const expectedSales = Math.max(0, Math.min(q, q * Phi_z + expectedDemand * (1 - Phi_z) - demandStd * phi_z));
   const expectedLost = Math.max(0, demandStd * phi_z + (expectedDemand - q) * (1 - Phi_z));
+  const expectedSales = Math.max(0, expectedDemand - expectedLost);
   const rushSales = expectedLost * rushProb;
   
   return expectedSales * fullPrice + rushSales * rushUnitRevenue;
