@@ -16,11 +16,8 @@ jest.mock('./contexts/PortfolioSettingsContext', () => ({
   })
 }));
 
-// Мокаем авторизацию, чтобы не рендерить Login
-jest.mock('./utils/authGate', () => ({
-  authGate: async () => ({ user: { id: 'test-user' } })
-}));
-jest.mock('./Login', () => () => null);
+// Мокаем основной калькулятор, чтобы тест просто проверял роутинг(рендеринг App) без глубокого рендера всего приложения
+jest.mock('./InventoryCalculator', () => () => <div data-testid="inventory-calculator" />);
 
 // Мокаем toast
 jest.mock('react-hot-toast', () => ({
