@@ -1,5 +1,5 @@
 import React from 'react';
-import UserMenu from './UserMenu';
+
 
 interface SimpleLayoutProps {
   children: React.ReactNode;
@@ -8,11 +8,11 @@ interface SimpleLayoutProps {
   productsCount: number;
 }
 
-const SimpleLayout: React.FC<SimpleLayoutProps> = ({ 
-  children, 
-  activeTab, 
-  onTabChange, 
-  productsCount 
+const SimpleLayout: React.FC<SimpleLayoutProps> = ({
+  children,
+  activeTab,
+  onTabChange,
+  productsCount
 }) => {
   const navigation = [
     { id: 'dashboard', name: 'Дашборд' },
@@ -27,7 +27,7 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
     { id: 'theory', name: 'Теория' },
   ];
 
-  // Logout перенесён в UserMenu
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -44,8 +44,8 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
                   disabled={item.disabled}
                   className={`
                     px-3 py-2 rounded-md text-sm font-medium
-                    ${activeTab === item.id 
-                      ? 'bg-blue-500 text-white' 
+                    ${activeTab === item.id
+                      ? 'bg-blue-500 text-white'
                       : item.disabled
                         ? 'text-gray-400 cursor-not-allowed'
                         : 'text-gray-700 hover:bg-gray-100'
@@ -58,7 +58,7 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
                   )}
                 </button>
               ))}
-              <UserMenu />
+
             </nav>
           </div>
         </div>

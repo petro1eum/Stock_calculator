@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
+import {
   HomeIcon,
   CubeIcon,
   Cog6ToothIcon,
@@ -15,7 +15,7 @@ import {
   MoonIcon
 } from '@heroicons/react/24/outline';
 import { Toaster } from 'react-hot-toast';
-import UserMenu from './UserMenu';
+
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -26,13 +26,13 @@ interface LayoutProps {
   onToggleDarkMode: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ 
-  children, 
-  activeTab, 
-  onTabChange, 
+const Layout: React.FC<LayoutProps> = ({
+  children,
+  activeTab,
+  onTabChange,
   productsCount,
   darkMode,
-  onToggleDarkMode 
+  onToggleDarkMode
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -59,7 +59,7 @@ const Layout: React.FC<LayoutProps> = ({
 
   return (
     <div className={`min-h-screen ${darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
-      <Toaster 
+      <Toaster
         position="top-right"
         toastOptions={{
           className: darkMode ? 'dark' : '',
@@ -69,7 +69,7 @@ const Layout: React.FC<LayoutProps> = ({
           }
         }}
       />
-      
+
       {/* Mobile sidebar backdrop */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -91,22 +91,19 @@ const Layout: React.FC<LayoutProps> = ({
         animate={sidebarOpen ? 'open' : 'closed'}
         variants={sidebarVariants}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className={`fixed inset-y-0 left-0 z-50 w-72 ${
-          darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-        } border-r transform lg:translate-x-0 lg:static lg:inset-0`}
+        className={`fixed inset-y-0 left-0 z-50 w-72 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+          } border-r transform lg:translate-x-0 lg:static lg:inset-0`}
       >
         <div className="flex h-full flex-col">
           {/* Logo area */}
-          <div className={`flex h-16 items-center justify-between px-6 ${
-            darkMode ? 'border-gray-700' : 'border-gray-200'
-          } border-b`}>
+          <div className={`flex h-16 items-center justify-between px-6 ${darkMode ? 'border-gray-700' : 'border-gray-200'
+            } border-b`}>
             <div className="flex items-center">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
                 <ChartBarIcon className="h-6 w-6 text-white" />
               </div>
-              <h1 className={`ml-3 text-xl font-bold ${
-                darkMode ? 'text-white' : 'text-gray-900'
-              }`}>StockOptim</h1>
+              <h1 className={`ml-3 text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'
+                }`}>StockOptim</h1>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
@@ -121,7 +118,7 @@ const Layout: React.FC<LayoutProps> = ({
             {navigation.map((item) => {
               const isActive = activeTab === item.id;
               const isDisabled = item.disabled;
-              
+
               return (
                 <motion.button
                   key={item.id}
@@ -132,9 +129,9 @@ const Layout: React.FC<LayoutProps> = ({
                   data-testid={`nav-${item.id}`}
                   className={`
                     w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-colors
-                    ${isActive 
-                      ? darkMode 
-                        ? 'bg-gray-700 text-white' 
+                    ${isActive
+                      ? darkMode
+                        ? 'bg-gray-700 text-white'
                         : 'bg-blue-50 text-blue-700'
                       : isDisabled
                         ? darkMode
@@ -147,16 +144,15 @@ const Layout: React.FC<LayoutProps> = ({
                   `}
                 >
                   <div className="flex items-center">
-                    <item.icon className={`h-5 w-5 mr-3 ${
-                      isActive ? '' : isDisabled ? 'opacity-50' : ''
-                    }`} />
+                    <item.icon className={`h-5 w-5 mr-3 ${isActive ? '' : isDisabled ? 'opacity-50' : ''
+                      }`} />
                     <span>{item.name}</span>
                   </div>
                   {item.badge && (
                     <span className={`
                       ml-auto inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
-                      ${darkMode 
-                        ? 'bg-gray-700 text-gray-300' 
+                      ${darkMode
+                        ? 'bg-gray-700 text-gray-300'
                         : 'bg-gray-200 text-gray-700'
                       }
                     `}>
@@ -174,8 +170,8 @@ const Layout: React.FC<LayoutProps> = ({
               onClick={onToggleDarkMode}
               className={`
                 w-full flex items-center justify-center px-4 py-3 rounded-lg text-sm font-medium transition-colors
-                ${darkMode 
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                ${darkMode
+                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }
               `}
@@ -199,9 +195,8 @@ const Layout: React.FC<LayoutProps> = ({
       {/* Main content */}
       <div className="lg:pl-72">
         {/* Top bar */}
-        <div className={`sticky top-0 z-40 flex h-16 items-center gap-x-4 px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8 ${
-          darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-        } border-b`}>
+        <div className={`sticky top-0 z-40 flex h-16 items-center gap-x-4 px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+          } border-b`}>
           <button
             onClick={() => setSidebarOpen(true)}
             className={`-m-2.5 p-2.5 lg:hidden ${darkMode ? 'text-gray-400' : 'text-gray-700'}`}
@@ -221,7 +216,7 @@ const Layout: React.FC<LayoutProps> = ({
                 </span>
               )}
             </div>
-            <UserMenu />
+
           </div>
         </div>
 

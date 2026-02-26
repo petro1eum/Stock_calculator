@@ -1,5 +1,4 @@
 import React from 'react';
-import { supabase } from '../utils/supabaseClient';
 
 const WbKeyManager: React.FC = () => {
   const [masked, setMasked] = React.useState<string | null>(null);
@@ -18,15 +17,8 @@ const WbKeyManager: React.FC = () => {
   const fetchMasked = React.useCallback(async () => {
     setError(null);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data, error } = await supabase
-        .from('user_secrets')
-        .select('wb_api_key, updated_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (error) throw error;
-      setMasked(maskKey(data?.wb_api_key));
+      const key = localStorage.getItem('wb_api_key');
+      setMasked(maskKey(key));
     } catch (e: any) {
       setError(e.message);
     }
@@ -38,12 +30,7 @@ const WbKeyManager: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Не авторизован');
-      const { error } = await supabase
-        .from('user_secrets')
-        .upsert({ user_id: user.id, wb_api_key: value, updated_at: new Date().toISOString() });
-      if (error) throw error;
+      localStorage.setItem('wb_api_key', value);
       setValue('');
       await fetchMasked();
     } catch (e: any) {
@@ -58,15 +45,7 @@ const WbKeyManager: React.FC = () => {
     setError(null);
     setTestResult(null);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Не авторизован');
-      const { data, error } = await supabase
-        .from('user_secrets')
-        .select('wb_api_key')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (error) throw error;
-      const key = data?.wb_api_key as string | undefined;
+      const key = localStorage.getItem('wb_api_key');
       if (!key) throw new Error('Ключ не найден');
 
       const dateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -126,7 +105,7 @@ const WbKeyManager: React.FC = () => {
           {testResult.message}
         </div>
       )}
-      <p className="text-xs text-gray-500">Ключ хранится в Supabase в вашей записи. В интерфейсе показывается только маска.</p>
+      <p className="text-xs text-gray-500">Ключ безопасно хранится в памяти вашего браузера (localStorage).</p>
     </div>
   );
 };

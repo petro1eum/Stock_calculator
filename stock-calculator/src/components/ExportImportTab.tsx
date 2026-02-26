@@ -4,7 +4,6 @@ import { parseSalesCSV, parseSalesXLSX, updateProductsFromSales } from '../utils
 import WildberriesImporter from './WildberriesImporter';
 import toast from 'react-hot-toast';
 import { usePortfolioSettings } from '../contexts/PortfolioSettingsContext';
-import { supabase } from '../utils/supabaseClient';
 import WbKeyManager from './WbKeyManager';
 
 interface ExportImportTabProps {
@@ -26,27 +25,29 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
 }) => {
   const portfolioSettings = usePortfolioSettings();
 
-  const loadFromDB = async (table: 'wb_sales' | 'wb_stocks' | 'wb_purchases' | 'wb_orders') => {
+  const loadFromDB = async (table: 'wb_sales' | 'wb_stocks' | 'wb_purchases' | 'wb_orders' | 'wb_analytics' | 'wb_prices') => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error('Не авторизован');
-        return [] as any[];
-      }
-      const { data, error } = await supabase
-        .from(table)
-        .select('*')
-        .eq('user_id', user.id)
-        .limit(5000);
-      if (error) {
-        toast.error(error.message || 'Ошибка загрузки из БД');
-        return [] as any[];
-      }
-      return (data || []) as any[];
+      const str = localStorage.getItem(table);
+      return str ? JSON.parse(str) : [];
     } catch (e) {
-      toast.error('Ошибка загрузки из БД');
+      toast.error('Ошибка загрузки локальных данных');
       return [] as any[];
     }
+  };
+
+  const upsertLocal = (table: string, items: any[], keyField: string | string[]) => {
+    const existingStr = localStorage.getItem(table);
+    const existing = existingStr ? JSON.parse(existingStr) : [];
+    const map = new Map();
+    existing.forEach((r: any) => {
+      const k = Array.isArray(keyField) ? keyField.map(f => r[f]).join('|') : r[keyField];
+      map.set(k, r);
+    });
+    items.forEach((m: any) => {
+      const k = Array.isArray(keyField) ? keyField.map(f => m[f]).join('|') : m[keyField];
+      map.set(k, m);
+    });
+    localStorage.setItem(table, JSON.stringify(Array.from(map.values())));
   };
 
   const applySalesFromDB = async () => {
@@ -64,13 +65,13 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     setProducts(prev => {
       // автосоздание товаров по новым SKU
       const existing = new Set(prev.map(p => p.sku));
-      const skus = Array.from(new Set(rows.map((r: any) => String(r.sku))));
-      const missing = skus.filter(sku => !existing.has(sku));
+      const skus: string[] = Array.from(new Set(rows.map((r: any) => String(r.sku))));
+      const missing: string[] = skus.filter(sku => !existing.has(sku));
       const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
       const newItems: Product[] = missing.map((sku, idx) => ({
         id: prev.length + idx + 1,
-        name: String(typeof rows.find((r: any) => String(r.sku) === String(sku))?.raw?.subject === 'string' ? rows.find((r: any) => String(r.sku) === String(sku))!.raw.subject : 'Товар WB'),
-        sku: String(sku),
+        name: String(typeof rows.find((r: any) => String(r.sku) === sku)?.raw?.subject === 'string' ? rows.find((r: any) => String(r.sku) === sku)!.raw.subject : 'Товар WB'),
+        sku: sku,
         purchase: 0,
         margin: 0,
         muWeek: 0,
@@ -142,10 +143,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
       const mapped = (data || []).map((s: any) => ({
-        user_id: user.id,
         date: `${(s.date?.split('T')[0] || s.date)}T00:00:00Z`,
         sku: String(s.nmId),
         units: Number(s.quantity || 0),
@@ -154,8 +152,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         warehouse: s.warehouseName || null,
         raw: s
       }));
-      const { error } = await supabase.from('wb_sales').upsert(mapped as any, { onConflict: 'user_id,sale_id' as any });
-      if (error) throw error;
+      upsertLocal('wb_sales', mapped, 'sale_id');
       // Автосоздание товаров и пересчет спроса
       const salesRecords: SalesRecord[] = mapped.map((m: any) => ({ date: m.date, sku: m.sku, units: m.units, revenue: m.revenue ?? undefined }));
       setProducts(prev => {
@@ -197,10 +194,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
       const mapped = (data || []).map((r: any) => ({
-        user_id: user.id,
         date: `${(r.date?.split('T')[0] || r.date)}T00:00:00Z`,
         sku: String(r.nmId),
         quantity: Number(r.quantity || 0),
@@ -209,8 +203,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         warehouse: r.warehouse || r.warehouseName || null,
         raw: r
       }));
-      const { error } = await supabase.from('wb_purchases').upsert(mapped as any, { onConflict: 'user_id,income_id' as any });
-      if (error) throw error;
+      upsertLocal('wb_purchases', mapped, 'income_id');
       toast.success(`Импортировано поставок: ${mapped.length}`);
     } catch (err: any) {
       toast.error(`Ошибка импорта поставок: ${err.message || err}`);
@@ -224,15 +217,12 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
       const mapped = (data || []).map((r: any) => {
         const isoDate = `${(r.lastChangeDate?.split('T')[0] || r.date)}T00:00:00Z`;
         const barcode = (r.barcode !== undefined && r.barcode !== null && String(r.barcode).trim() !== '')
           ? String(r.barcode)
           : String(r.nmId || r.nmid || 'NO_BARCODE');
         return {
-          user_id: user.id,
           date: isoDate,
           sku: String(r.nmId),
           barcode,
@@ -246,8 +236,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
           raw: r
         };
       });
-      const { error } = await supabase.from('wb_stocks').upsert(mapped as any, { onConflict: 'user_id,sku,barcode,warehouse,date' as any });
-      if (error) throw error;
+      upsertLocal('wb_stocks', mapped, ['sku', 'barcode', 'warehouse', 'date']);
       // Автосоздание и обновление currentStock
       const totals = new Map<string, number>();
       mapped.forEach((m: any) => totals.set(m.sku, (totals.get(m.sku) || 0) + (m.quantity || 0)));
@@ -290,10 +279,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
       const mapped = (data || []).map((row: any) => ({
-        user_id: user.id,
         nm_id: String(row.nmID ?? row.nmId ?? row.nmid),
         period_begin: new Date(row.statistics?.selectedPeriod?.begin || Date.now()).toISOString(),
         period_end: new Date(row.statistics?.selectedPeriod?.end || Date.now()).toISOString(),
@@ -301,10 +287,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         stocks_wb: typeof row.stocks?.stocksWb === 'number' ? row.stocks.stocksWb : null,
         raw: row
       }));
-      const { error } = await supabase
-        .from('wb_analytics')
-        .upsert(mapped as any, { onConflict: 'user_id,nm_id,period_begin,period_end' as any, ignoreDuplicates: true as any });
-      if (error) throw error;
+      upsertLocal('wb_analytics', mapped, ['nm_id', 'period_begin', 'period_end']);
       // Обновим имена/категории по vendorCode/object.name, если есть уже созданные карточки
       setProducts(prev => prev.map(p => {
         const match = (data as any[]).find((r: any) => String(r.nmID ?? r.nmId) === p.sku);
@@ -328,8 +311,6 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       const text = await file.text();
       const json = JSON.parse(text);
       const list = json?.response?.data?.listGoods || json?.data?.listGoods || json?.listGoods || [];
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
       const rows: any[] = [];
       (list as any[]).forEach((g: any) => {
         const nmId = String(g.nmID ?? g.nmId ?? g.nmid);
@@ -338,7 +319,6 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         const vendorCode = g.vendorCode;
         (g.sizes || []).forEach((s: any) => {
           rows.push({
-            user_id: user.id,
             nm_id: nmId,
             size_id: String(s.sizeID ?? s.sizeId ?? s.id),
             currency,
@@ -353,12 +333,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
           setProducts(prev => prev.map(p => p.sku === nmId ? { ...p, name: vendorCode } : p));
         }
       });
-      if (rows.length > 0) {
-        const { error } = await supabase
-          .from('wb_prices')
-          .upsert(rows as any, { onConflict: 'user_id,nm_id,size_id' as any, ignoreDuplicates: true as any });
-        if (error) throw error;
-      }
+      if (rows.length > 0) upsertLocal('wb_prices', rows, ['nm_id', 'size_id']);
       toast.success(`Импортировано ценовых записей: ${rows.length}`);
     } catch (err: any) {
       toast.error(`Ошибка импорта цен: ${err.message || err}`);
@@ -525,14 +500,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
 
   const exportSalesJsonFromDb = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
-      const { data, error } = await supabase
-        .from('wb_sales')
-        .select('*')
-        .eq('user_id', user.id)
-        .limit(50000);
-      if (error) throw error;
+      const data = await loadFromDB('wb_sales');
       const arr = (data || []).map((r: any) => ({
         date: (r.date || '').split('T')[0],
         nmId: Number(r.sku),
@@ -550,14 +518,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
 
   const exportPurchasesJsonFromDb = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
-      const { data, error } = await supabase
-        .from('wb_purchases')
-        .select('*')
-        .eq('user_id', user.id)
-        .limit(50000);
-      if (error) throw error;
+      const data = await loadFromDB('wb_purchases');
       const arr = (data || []).map((r: any) => ({
         date: (r.date || '').split('T')[0],
         nmId: Number(r.sku),
@@ -574,14 +535,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
 
   const exportStocksJsonFromDb = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
-      const { data, error } = await supabase
-        .from('wb_stocks')
-        .select('*')
-        .eq('user_id', user.id)
-        .limit(50000);
-      if (error) throw error;
+      const data = await loadFromDB('wb_stocks');
       const arr = (data || []).map((r: any) => ({
         date: (r.date || '').split('T')[0],
         nmId: Number(r.sku),
@@ -603,14 +557,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
 
   const exportAnalyticsJsonFromDb = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
-      const { data, error } = await supabase
-        .from('wb_analytics')
-        .select('*')
-        .eq('user_id', user.id)
-        .limit(20000);
-      if (error) throw error;
+      const data = await loadFromDB('wb_analytics');
       const arr = (data || []).map((r: any) => ({
         nmID: Number(r.nm_id),
         vendorCode: r.raw?.vendorCode,
@@ -626,14 +573,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
 
   const exportPricesJsonFromDb = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('Не авторизован'); return; }
-      const { data, error } = await supabase
-        .from('wb_prices')
-        .select('*')
-        .eq('user_id', user.id)
-        .limit(50000);
-      if (error) throw error;
+      const data = await loadFromDB('wb_prices');
       // Группируем по nm_id -> listGoods
       const map = new Map<string, any>();
       (data || []).forEach((r: any) => {
@@ -666,7 +606,7 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
 
   return (
     <div className="p-6">
-      
+
       <div className="mb-6 pb-3 border-b">
         <h1 className="text-xl font-medium text-black">Управление данными</h1>
         <div className="text-sm text-gray-600 mt-1">
@@ -676,20 +616,20 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       </div>
 
       <div className="space-y-8">
-        
+
         {/* Экспорт */}
         <div>
           <h2 className="text-sm font-medium text-gray-700 mb-3">ЭКСПОРТ</h2>
           <div className="flex gap-4">
-            <button 
-              onClick={exportToCSV} 
+            <button
+              onClick={exportToCSV}
               disabled={products.length === 0}
               className="px-4 py-2 bg-gray-800 text-white text-sm disabled:bg-gray-400"
             >
               Экспорт в CSV
             </button>
-            <button 
-              onClick={exportToJSON} 
+            <button
+              onClick={exportToJSON}
               disabled={products.length === 0}
               className="px-4 py-2 bg-gray-800 text-white text-sm disabled:bg-gray-400"
             >
@@ -733,8 +673,8 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
                 Импорт Excel
               </label>
             </div>
-            <button 
-              onClick={generateSampleCSV} 
+            <button
+              onClick={generateSampleCSV}
               className="px-4 py-2 bg-gray-800 text-white text-sm"
             >
               Скачать шаблон
@@ -746,14 +686,14 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
         <div>
           <h2 className="text-sm font-medium text-gray-700 mb-3">БАЗА ДАННЫХ</h2>
           <div className="flex flex-wrap gap-2">
-            <button 
-              onClick={applySalesFromDB} 
+            <button
+              onClick={applySalesFromDB}
               className="px-4 py-2 bg-gray-800 text-white text-sm"
             >
               Загрузить продажи
             </button>
-            <button 
-              onClick={applyStocksFromDB} 
+            <button
+              onClick={applyStocksFromDB}
               className="px-4 py-2 bg-gray-800 text-white text-sm"
             >
               Загрузить остатки

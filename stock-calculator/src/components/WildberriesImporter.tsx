@@ -1,6 +1,5 @@
 import React from 'react';
 import { Product, SalesRecord } from '../types';
-import { supabase } from '../utils/supabaseClient';
 import { updateProductsFromSales } from '../utils/inventoryCalculations';
 
 interface WildberriesImporterProps {
@@ -21,10 +20,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
   const [rateInfo, setRateInfo] = React.useState<{ remaining?: number; limit?: number } | null>(null);
 
   const getWbKey = async (): Promise<string | null> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data } = await supabase.from('user_secrets').select('wb_api_key').eq('user_id', user.id).maybeSingle();
-    return (data?.wb_api_key as string) || null;
+    return localStorage.getItem('wb_api_key');
   };
 
   const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -68,7 +64,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     } catch { return null; }
   };
   const writeCache = (url: string, data: unknown) => {
-    try { localStorage.setItem(makeCacheKey(url), JSON.stringify({ ts: Date.now(), data })); } catch {}
+    try { localStorage.setItem(makeCacheKey(url), JSON.stringify({ ts: Date.now(), data })); } catch { }
   };
 
   const fetchWithRetry = async (url: string, key: string, useCache = true, maxRetries = 6) => {
@@ -148,155 +144,11 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
     }
   };
 
-  const fetchExistingByIds = async (table: 'wb_sales' | 'wb_purchases', idColumn: 'sale_id' | 'income_id', ids: string[], userId: string): Promise<Set<string>> => {
-    const existing = new Set<string>();
-    const chunkSize = 800; // safe for URL length
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize);
-      const { data, error } = await supabase
-        .from(table)
-        .select(idColumn)
-        .eq('user_id', userId)
-        .in(idColumn, chunk as any);
-      if (error) continue;
-      (data as any[]).forEach((row) => existing.add(String(row[idColumn])));
-    }
-    return existing;
-  };
-
   const safeSaveToDb = async (type: 'sales' | 'purchases' | 'stocks' | 'prices' | 'analytics', records: any[]) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      if (type === 'sales') {
-        const rows = records.map((r: any) => ({
-          user_id: user.id,
-          date: r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date,
-          sku: String(r.nmId),
-          units: Number(r.quantity || 0),
-          revenue: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
-          sale_id: String(r.saleID || r.gNumber || r.srid || `${r.nmId || r.nmid}-${r.date}-${r.barcode || ''}`),
-          warehouse: r.warehouseName || null,
-          raw: r
-        }));
-        // Вставляем только новые sale_id, чтобы не триггерить UPDATE под RLS
-        const ids = rows.map(r => r.sale_id);
-        const existing = await fetchExistingByIds('wb_sales', 'sale_id', ids, user.id);
-        const onlyNew = rows.filter(r => !existing.has(r.sale_id));
-        if (onlyNew.length > 0) {
-          await supabase.from('wb_sales').insert(onlyNew as any);
-        }
-        return;
-      }
-
-      if (type === 'purchases') {
-        // Профессионально: храним построчно. Чтобы не менять схему (PK: user_id,income_id),
-        // делаем составной идентификатор записи: `${incomeId}:${sku}`.
-        const rows = (records as any[]).map((r: any) => {
-          const incomeId = r.incomeId ? String(r.incomeId) : String(`${r.nmId}-${r.date}`);
-          const sku = String(r.nmId);
-          const compositeId = `${incomeId}:${sku}`;
-          return {
-            user_id: user.id,
-            date: r.date && typeof r.date === 'string' ? `${r.date}T00:00:00Z` : r.date,
-            sku,
-            quantity: Number(r.quantity || 0),
-            total_price: r.totalPrice !== undefined ? Number(r.totalPrice) : null,
-            income_id: compositeId,
-            warehouse: r.warehouse || r.warehouseName || null,
-            raw: r
-          };
-        });
-        const ids = rows.map(r => r.income_id);
-        const existing = await fetchExistingByIds('wb_purchases', 'income_id', ids, user.id);
-        const onlyNew = rows.filter(r => !existing.has(r.income_id));
-        if (onlyNew.length > 0) {
-          await supabase.from('wb_purchases').insert(onlyNew as any);
-        }
-        return;
-      }
-
-      if (type === 'stocks') {
-        const rows = (records as any[])
-          .map((r: any) => {
-            const isoDate = toIsoDateOrNull(r.date) || toIsoDateOrNull(r.lastChangeDate) || toIsoDateOrNull(new Date());
-            const sku = r.nmId ?? r.nmid ?? r.sku;
-            const barcode = (r.barcode !== undefined && r.barcode !== null && String(r.barcode).trim() !== '')
-              ? String(r.barcode)
-              : String(sku ?? 'NO_BARCODE');
-            return {
-              user_id: user.id,
-              date: isoDate,
-              sku: sku != null ? String(sku) : null,
-              barcode,
-              tech_size: r.techSize !== undefined && r.techSize !== null ? String(r.techSize) : null,
-              quantity: toInt(r.quantity, 0),
-              in_way_to_client: toInt(r.inWayToClient, 0),
-              in_way_from_client: toInt(r.inWayFromClient, 0),
-              warehouse: r.warehouse || r.warehouseName || null,
-              price: r.price !== undefined ? toNumOrNull(r.price) : (r.Price !== undefined ? toNumOrNull(r.Price) : null),
-              discount: r.discount !== undefined ? toNumOrNull(r.discount) : (r.Discount !== undefined ? toNumOrNull(r.Discount) : null),
-              raw: r
-            } as const;
-          })
-          // фильтруем потенциально проблемные строки (без даты или SKU)
-          .filter((row: any) => Boolean(row.date && row.sku));
-
-        if (rows.length === 0) return;
-
-        // ВАЖНО: в конфликт-ключ добавлен warehouse, иначе строки из разных складов затирают друг друга
-        await supabase
-          .from('wb_stocks')
-          .upsert(rows as any, { onConflict: 'user_id,sku,barcode,warehouse,date' as any, ignoreDuplicates: true as any });
-        return;
-      }
-
-      if (type === 'prices') {
-        const rows: any[] = [];
-        for (const g of records as any[]) {
-          const nmId = String(g.nmID ?? g.nmId ?? g.nmid);
-          const currency = g.currencyIsoCode4217 || null;
-          const discount = typeof g.discount === 'number' ? g.discount : (typeof g.clubDiscount === 'number' ? g.clubDiscount : null);
-          (g.sizes || []).forEach((s: any) => {
-            rows.push({
-              user_id: user.id,
-              nm_id: nmId,
-              size_id: String(s.sizeID ?? s.sizeId ?? s.id),
-              currency,
-              price: typeof s.price === 'number' ? s.price : null,
-              discounted_price: typeof s.discountedPrice === 'number' ? s.discountedPrice : null,
-              discount,
-              raw: { ...g, size: s }
-            });
-          });
-        }
-        if (rows.length > 0) {
-          await supabase
-            .from('wb_prices')
-            .upsert(rows as any, { onConflict: 'user_id,nm_id,size_id' as any, ignoreDuplicates: true as any });
-        }
-        return;
-      }
-
-      if (type === 'analytics') {
-        const rows = (records as any[]).map((row: any) => ({
-          user_id: user.id,
-          nm_id: String(row.nmID ?? row.nmId ?? row.nmid),
-          period_begin: row.period_begin || row.statistics?.selectedPeriod?.begin ? new Date(row.period_begin || row.statistics.selectedPeriod.begin).toISOString() : new Date().toISOString(),
-          period_end: row.period_end || row.statistics?.selectedPeriod?.end ? new Date(row.period_end || row.statistics.selectedPeriod.end).toISOString() : new Date().toISOString(),
-          metrics: row.statistics || row.metrics || null,
-          stocks_wb: typeof row.stocks?.stocksWb === 'number' ? row.stocks.stocksWb : (typeof row.stocks_wb === 'number' ? row.stocks_wb : null),
-          raw: row
-        }));
-        if (rows.length > 0) {
-          await supabase
-            .from('wb_analytics')
-            .upsert(rows as any, { onConflict: 'user_id,nm_id,period_begin,period_end' as any, ignoreDuplicates: true as any });
-        }
-        return;
-      }
-    } catch {}
+    // В автономном режиме мы больше не транслируем сырые данные в облако Supabase.
+    // Все спарсенные данные отправляются наверх родительскому компоненту через onUpdateProducts 
+    // и живут в React State, который можно сохранить через вкладку "Экспорт".
+    return;
   };
 
   const importSales = async () => {

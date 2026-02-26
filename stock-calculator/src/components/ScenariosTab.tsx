@@ -6,7 +6,7 @@ import { inverseNormal, blackScholesCall } from '../utils/mathFunctions';
 import { calculateExpectedRevenue, calculateVolatility, mcDemandLoss, getEffectivePurchasePrice, optimizeQuantity, strictBSMixtureOptionValue } from '../utils/inventoryCalculations';
 import { PortfolioOptimizer } from '../utils/portfolioOptimization';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Scatter, ScatterChart } from 'recharts';
-import { supabase } from '../utils/supabaseClient';
+
 
 interface ScenariosTabProps {
   products: Product[];
@@ -41,7 +41,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   const [showRecommendations, setShowRecommendations] = useState<boolean>(false);
   const [corrById, setCorrById] = useState<Map<number, Map<number, number>> | undefined>(undefined);
   const [covLastUpdated, setCovLastUpdated] = useState<string | undefined>(undefined);
-  
+
   // Состояние для портфельной оптимизации
   const [portfolioConstraints, setPortfolioConstraints] = useState<PortfolioConstraints>({
     totalBudget: 1000000, // 1 млн руб
@@ -52,11 +52,11 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     maxSkuShare: 0.4,
     minDistinctSkus: 5
   });
-  
+
   const fmt = formatNumber;
-  
+
   const product = products.find(p => p.id === selectedProduct);
-  
+
   // Динамически вычисляем ограничения диверсификации из данных (волатильности/корреляции)
   const dynamicConstraints: PortfolioConstraints = React.useMemo(() => {
     const eps = 1e-9;
@@ -115,13 +115,13 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
       maxSkuShare,
       minDistinctSkus
     } as PortfolioConstraints;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products, mlForecasts, corrById, weeks, budgetInput, portfolioConstraints.totalBudget]);
-  
+
   // Загрузка ML прогнозов
   React.useEffect(() => {
     if (!useMLForecasts) return;
-    
+
     const loadForecasts = async () => {
       try {
         const resp = await fetch('/api/forecasts');
@@ -132,7 +132,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
         console.error('Failed to load ML forecasts:', error);
       }
     };
-    
+
     loadForecasts();
   }, [useMLForecasts]);
 
@@ -148,35 +148,35 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     });
     setCorrById(ident);
   }, [products]);
-  
+
   // Расчет для каждого сценария
   const scenarioResults = useMemo(() => {
     if (!product) return [];
-    
+
     return scenarios.map(scenario => {
       // Используем ML прогнозы если доступны
       let adjustedMuWeek = product.muWeek;
       let adjustedSigmaWeek = product.sigmaWeek;
-      
+
       if (useMLForecasts && mlForecasts[product.sku]) {
         adjustedMuWeek = mlForecasts[product.sku].mu;
         adjustedSigmaWeek = mlForecasts[product.sku].sigma;
       }
-      
+
       adjustedMuWeek *= scenario.muWeekMultiplier;
       adjustedSigmaWeek *= scenario.sigmaWeekMultiplier;
-      
+
       // Пересчитываем оптимальные параметры для сценария
       const step = Math.max(1, Math.round(adjustedMuWeek / 10));
-      
+
       const minQ = product.minOrderQty || 0;
       const maxQ = product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits;
-      
+
       const evaluateQ = (q: number) => {
         const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
         const S = calculateExpectedRevenue(
-          q, adjustedMuWeek, adjustedSigmaWeek, weeks, 
-          effectivePurchase, product.margin, rushProb, rushSave, 
+          q, adjustedMuWeek, adjustedSigmaWeek, weeks,
+          effectivePurchase, product.margin, rushProb, rushSave,
           mcDemandLoss, monteCarloParams
         );
         const K = q * effectivePurchase * (1 + r * weeks / 52) + q * hold * weeks;
@@ -186,10 +186,10 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
         return optionValue;
       };
       const { bestQ, bestValue: bestNet } = optimizeQuantity(minQ, maxQ, step, evaluateQ);
-      
+
       const z = inverseNormal(csl);
       const safety = Math.ceil(z * adjustedSigmaWeek * Math.sqrt(weeks));
-      
+
       return {
         scenario,
         optQ: bestQ,
@@ -200,42 +200,42 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
       };
     });
   }, [product, scenarios, maxUnits, rushProb, rushSave, hold, r, weeks, csl, monteCarloParams, useMLForecasts, mlForecasts]);
-  
+
   // Взвешенные оптимальные параметры
   const weightedOptimal = useMemo(() => {
     if (scenarioResults.length === 0) return { optQ: 0, optValue: 0, safety: 0 };
-    
-    const weightedQ = scenarioResults.reduce((sum, result) => 
+
+    const weightedQ = scenarioResults.reduce((sum, result) =>
       sum + result.optQ * result.scenario.probability, 0
     );
-    
-    const weightedValue = scenarioResults.reduce((sum, result) => 
+
+    const weightedValue = scenarioResults.reduce((sum, result) =>
       sum + result.optValue * result.scenario.probability, 0
     );
-    
-    const weightedSafety = scenarioResults.reduce((sum, result) => 
+
+    const weightedSafety = scenarioResults.reduce((sum, result) =>
       sum + result.safety * result.scenario.probability, 0
     );
-    
+
     return {
       optQ: Math.round(weightedQ),
       optValue: weightedValue,
       safety: Math.round(weightedSafety)
     };
   }, [scenarioResults]);
-  
+
   // Портфельная оптимизация
   const portfolioOptimization = useMemo(() => {
     if (products.length === 0) return null;
     if (activeView !== 'portfolio') return null; // не считать, пока вкладка не активна
- 
+
     // Если используем ML прогнозы, обновляем muWeek и sigmaWeek у продуктов
     const productsWithMl = useMLForecasts ? products.map(p => ({
       ...p,
       muWeek: mlForecasts[p.sku]?.mu || p.muWeek,
       sigmaWeek: mlForecasts[p.sku]?.sigma || p.sigmaWeek
     })) : products;
-    
+
     const optimizer = new PortfolioOptimizer(
       productsWithMl,
       dynamicConstraints,
@@ -248,11 +248,11 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
       corrById,
       scenarios.map(s => ({ probability: s.probability, muWeekMultiplier: s.muWeekMultiplier, sigmaWeekMultiplier: s.sigmaWeekMultiplier })) as any
     );
-    
+
     const optimal = optimizer.optimize();
     const frontier = optimizer.buildEfficientFrontier(15);
     const schedule = optimizer.createDeliverySchedule(optimal.allocations);
-    
+
     // Текущее состояние (просто сумма оптимальных количеств)
     const current: PortfolioAllocation = {
       allocations: new Map(products.map(p => [p.id, p.optQ || 0])),
@@ -262,15 +262,15 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
       currencyExposure: new Map([['RUB', products.reduce((sum, p) => sum + (p.optQ || 0) * p.purchase, 0)]]),
       supplierConcentration: new Map([['domestic', 1.0]])
     };
-    
+
     return {
       current,
       optimal,
       frontier,
       schedule,
       improvement: {
-        roi: ((optimal.expectedReturn - optimal.totalInvestment) / optimal.totalInvestment - 
-              (current.expectedReturn - current.totalInvestment) / current.totalInvestment) * 100,
+        roi: ((optimal.expectedReturn - optimal.totalInvestment) / optimal.totalInvestment -
+          (current.expectedReturn - current.totalInvestment) / current.totalInvestment) * 100,
         risk: (optimal.portfolioRisk - current.portfolioRisk) / current.portfolioRisk * 100,
         capital: optimal.totalInvestment - current.totalInvestment
       }
@@ -308,7 +308,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     });
     return rows.sort((a, b) => b.invest - a.invest);
   }, [portfolioOptimization, products]);
-  
+
   if (products.length === 0) {
     return (
       <div className="bg-gray-100 rounded-lg p-8 text-center">
@@ -327,21 +327,19 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
         <div className="flex space-x-4">
           <button
             onClick={() => setActiveView('scenarios')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeView === 'scenarios' 
-                ? 'bg-blue-500 text-white' 
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeView === 'scenarios'
+                ? 'bg-blue-500 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+              }`}
           >
             Сценарный анализ
           </button>
           <button
             onClick={() => setActiveView('portfolio')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeView === 'portfolio' 
-                ? 'bg-blue-500 text-white' 
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeView === 'portfolio'
+                ? 'bg-blue-500 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+              }`}
           >
             Портфельная оптимизация
           </button>
@@ -353,7 +351,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
           {/* Выбор товара */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold mb-4">Сценарный анализ</h3>
-            
+
             {/* ML переключатель для сценариев */}
             <div className="mb-4 p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center justify-between">
@@ -365,14 +363,12 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                 </div>
                 <button
                   onClick={() => setUseMLForecasts(!useMLForecasts)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    useMLForecasts ? 'bg-blue-600' : 'bg-gray-200'
-                  }`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useMLForecasts ? 'bg-blue-600' : 'bg-gray-200'
+                    }`}
                 >
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      useMLForecasts ? 'translate-x-6' : 'translate-x-1'
-                    }`}
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useMLForecasts ? 'translate-x-6' : 'translate-x-1'
+                      }`}
                   />
                 </button>
               </div>
@@ -382,7 +378,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                 </p>
               )}
             </div>
-            
+
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Выберите товар для анализа
@@ -399,13 +395,13 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                 ))}
               </select>
             </div>
-            
+
             {product && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded">
                 <div>
                   <span className="text-sm text-gray-600">Базовый спрос/нед:</span>
                   <div className="font-semibold">
-                    {useMLForecasts && mlForecasts[product.sku] 
+                    {useMLForecasts && mlForecasts[product.sku]
                       ? `${fmt(mlForecasts[product.sku].mu)} ± ${fmt(mlForecasts[product.sku].sigma)} (ML)`
                       : `${fmt(product.muWeek)} ± ${fmt(product.sigmaWeek)}`}
                   </div>
@@ -425,7 +421,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
               </div>
             )}
           </div>
-          
+
           {/* Результаты по сценариям */}
           <div className="bg-white rounded-lg shadow-md overflow-hidden">
             <div className="px-6 py-4 border-b">
@@ -474,11 +470,10 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                         {fmt(result.demandStd)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          result.scenario.name === 'Пессимистичный' ? 'bg-red-100 text-red-800' :
-                          result.scenario.name === 'Оптимистичный' ? 'bg-green-100 text-green-800' :
-                          'bg-blue-100 text-blue-800'
-                        }`}>
+                        <span className={`px-2 py-1 text-xs rounded-full ${result.scenario.name === 'Пессимистичный' ? 'bg-red-100 text-red-800' :
+                            result.scenario.name === 'Оптимистичный' ? 'bg-green-100 text-green-800' :
+                              'bg-blue-100 text-blue-800'
+                          }`}>
                           {fmt(result.optQ)}
                         </span>
                       </td>
@@ -522,7 +517,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
               </table>
             </div>
           </div>
-          
+
           {/* Визуализация сравнения */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold mb-4">Сравнение решений</h3>
@@ -536,11 +531,10 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       <span className="w-32 text-sm">{result.scenario.name}:</span>
                       <div className="flex-1 bg-gray-200 rounded-full h-6 relative">
                         <div
-                          className={`h-full rounded-full ${
-                            result.scenario.name === 'Пессимистичный' ? 'bg-red-500' :
-                            result.scenario.name === 'Оптимистичный' ? 'bg-green-500' :
-                            'bg-blue-500'
-                          }`}
+                          className={`h-full rounded-full ${result.scenario.name === 'Пессимистичный' ? 'bg-red-500' :
+                              result.scenario.name === 'Оптимистичный' ? 'bg-green-500' :
+                                'bg-blue-500'
+                            }`}
                           style={{ width: `${(result.optQ / Math.max(...scenarioResults.map(r => r.optQ))) * 100}%` }}
                         />
                       </div>
@@ -559,7 +553,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                   </div>
                 </div>
               </div>
-              
+
               {/* Ценность опциона по сценариям */}
               <div>
                 <h4 className="text-sm font-medium text-gray-700 mb-2">Ценность опциона</h4>
@@ -569,11 +563,10 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       <span className="w-32 text-sm">{result.scenario.name}:</span>
                       <div className="flex-1 bg-gray-200 rounded-full h-6 relative">
                         <div
-                          className={`h-full rounded-full ${
-                            result.scenario.name === 'Пессимистичный' ? 'bg-red-500' :
-                            result.scenario.name === 'Оптимистичный' ? 'bg-green-500' :
-                            'bg-blue-500'
-                          }`}
+                          className={`h-full rounded-full ${result.scenario.name === 'Пессимистичный' ? 'bg-red-500' :
+                              result.scenario.name === 'Оптимистичный' ? 'bg-green-500' :
+                                'bg-blue-500'
+                            }`}
                           style={{ width: `${Math.max(0, (result.optValue / Math.max(...scenarioResults.map(r => r.optValue))) * 100)}%` }}
                         />
                       </div>
@@ -584,7 +577,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
               </div>
             </div>
           </div>
-          
+
           {/* Рекомендации */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold mb-4">Рекомендации</h3>
@@ -598,7 +591,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                   Это решение учитывает вероятности всех сценариев и минимизирует риски.
                 </p>
               </div>
-              
+
               {weightedOptimal.optQ < scenarioResults.find(r => r.scenario.name === 'Оптимистичный')?.optQ! && (
                 <div className="p-4 bg-yellow-50 border-l-4 border-yellow-500">
                   <h4 className="font-medium text-yellow-900 mb-2">Упущенная выгода</h4>
@@ -607,7 +600,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                   </p>
                 </div>
               )}
-              
+
               {weightedOptimal.optQ > scenarioResults.find(r => r.scenario.name === 'Пессимистичный')?.optQ! && (
                 <div className="p-4 bg-orange-50 border-l-4 border-orange-500">
                   <h4 className="font-medium text-orange-900 mb-2">Риск затоваривания</h4>
@@ -630,9 +623,9 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
               <div className="flex flex-col md:flex-row md:items-end md:space-x-4 space-y-2 md:space-y-0">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Доступный бюджет (₽)</label>
-                  <input type="number" value={budgetInput} onChange={e=>setBudgetInput(Number(e.target.value)||0)} className="w-60 p-2 border rounded" />
+                  <input type="number" value={budgetInput} onChange={e => setBudgetInput(Number(e.target.value) || 0)} className="w-60 p-2 border rounded" />
                 </div>
-                <button onClick={()=>setShowRecommendations(true)} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Получить рекомендации</button>
+                <button onClick={() => setShowRecommendations(true)} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Получить рекомендации</button>
               </div>
               {showRecommendations && portfolioOptimization && (
                 <div className="mt-4 overflow-x-auto">
@@ -648,14 +641,14 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {recommendations.map(r=> (
+                      {recommendations.map(r => (
                         <tr key={r.id} className="border-t">
                           <td className="pr-4 py-2 whitespace-nowrap">{r.sku}</td>
                           <td className="pr-4 py-2">{r.name}</td>
                           <td className="pr-4 py-2">{fmt(r.qty)}</td>
                           <td className="pr-4 py-2">₽{fmt(r.invest)}</td>
                           <td className="pr-4 py-2">₽{fmt(r.value)}</td>
-                          <td className="pr-4 py-2">{(r.share*100).toFixed(1)}%</td>
+                          <td className="pr-4 py-2">{(r.share * 100).toFixed(1)}%</td>
                         </tr>
                       ))}
                     </tbody>
@@ -663,28 +656,26 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                 </div>
               )}
             </div>
-            
+
             {/* ML переключатель */}
             <div className="mb-4 p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-sm font-medium text-gray-700">Источник прогнозов спроса</h4>
                   <p className="text-xs text-gray-500">
-                    {useMLForecasts 
-                      ? 'ML модель (EMA + сезонность)' 
+                    {useMLForecasts
+                      ? 'ML модель (EMA + сезонность)'
                       : 'Исторические данные (среднее + стандартное отклонение)'}
                   </p>
                 </div>
                 <button
                   onClick={() => setUseMLForecasts(!useMLForecasts)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    useMLForecasts ? 'bg-blue-600' : 'bg-gray-200'
-                  }`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useMLForecasts ? 'bg-blue-600' : 'bg-gray-200'
+                    }`}
                 >
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      useMLForecasts ? 'translate-x-6' : 'translate-x-1'
-                    }`}
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useMLForecasts ? 'translate-x-6' : 'translate-x-1'
+                      }`}
                   />
                 </button>
               </div>
@@ -694,7 +685,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                 </p>
               )}
             </div>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -793,7 +784,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">ROI:</span>
                         <span className="font-medium">
-                          {((portfolioOptimization.current.expectedReturn - portfolioOptimization.current.totalInvestment) / 
+                          {((portfolioOptimization.current.expectedReturn - portfolioOptimization.current.totalInvestment) /
                             portfolioOptimization.current.totalInvestment * 100).toFixed(1)}%
                         </span>
                       </div>
@@ -819,7 +810,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       <div className="flex justify-between">
                         <span className="text-sm text-blue-600">ROI:</span>
                         <span className="font-medium">
-                          {((portfolioOptimization.optimal.expectedReturn - portfolioOptimization.optimal.totalInvestment) / 
+                          {((portfolioOptimization.optimal.expectedReturn - portfolioOptimization.optimal.totalInvestment) /
                             portfolioOptimization.optimal.totalInvestment * 100).toFixed(1)}%
                         </span>
                       </div>
@@ -862,7 +853,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                     onClick={() => {
                       if (!portfolioOptimization) return;
                       const rows = [
-                        ['sku','name','qty','investment_rub','expected_return_rub','supplier','category']
+                        ['sku', 'name', 'qty', 'investment_rub', 'expected_return_rub', 'supplier', 'category']
                       ];
                       products.forEach(p => {
                         const q = portfolioOptimization.optimal.allocations.get(p.id) || 0;
@@ -884,7 +875,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;
-                      a.download = `order_plan_${new Date().toISOString().slice(0,10)}.csv`;
+                      a.download = `order_plan_${new Date().toISOString().slice(0, 10)}.csv`;
                       document.body.appendChild(a);
                       a.click();
                       document.body.removeChild(a);
@@ -903,17 +894,17 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                   <ResponsiveContainer width="100%" height="100%">
                     <ScatterChart margin={{ top: 20, right: 20, bottom: 40, left: 40 }}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="risk" 
+                      <XAxis
+                        dataKey="risk"
                         label={{ value: 'Риск (%)', position: 'insideBottom', offset: -10 }}
                         tickFormatter={(value) => `${(value * 100).toFixed(0)}`}
                       />
-                      <YAxis 
-                        dataKey="return" 
+                      <YAxis
+                        dataKey="return"
                         label={{ value: 'Доходность (%)', angle: -90, position: 'insideLeft' }}
                         tickFormatter={(value) => `${(value * 100).toFixed(0)}`}
                       />
-                      <Tooltip 
+                      <Tooltip
                         formatter={(value: number, name: string) => {
                           if (name === 'risk' || name === 'return') {
                             return `${(value * 100).toFixed(1)}%`;
@@ -921,7 +912,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                           return value;
                         }}
                       />
-                      
+
                       {/* Эффективная граница */}
                       <Line
                         data={portfolioOptimization.frontier}
@@ -932,20 +923,20 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                         dot={false}
                         name="Эффективная граница"
                       />
-                      
+
                       {/* Точки портфелей */}
                       <Scatter
                         data={[
                           {
                             risk: portfolioOptimization.current.portfolioRisk,
-                            return: (portfolioOptimization.current.expectedReturn - portfolioOptimization.current.totalInvestment) / 
-                                   portfolioOptimization.current.totalInvestment,
+                            return: (portfolioOptimization.current.expectedReturn - portfolioOptimization.current.totalInvestment) /
+                              portfolioOptimization.current.totalInvestment,
                             name: 'Текущий'
                           },
                           {
                             risk: portfolioOptimization.optimal.portfolioRisk,
-                            return: (portfolioOptimization.optimal.expectedReturn - portfolioOptimization.optimal.totalInvestment) / 
-                                   portfolioOptimization.optimal.totalInvestment,
+                            return: (portfolioOptimization.optimal.expectedReturn - portfolioOptimization.optimal.totalInvestment) /
+                              portfolioOptimization.optimal.totalInvestment,
                             name: 'Оптимальный'
                           }
                         ]}
@@ -990,7 +981,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                         const currentQty = portfolioOptimization.current.allocations.get(product.id) || 0;
                         const optimalQty = portfolioOptimization.optimal.allocations.get(product.id) || 0;
                         const change = optimalQty - currentQty;
-                        
+
                         return (
                           <tr key={product.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -1054,14 +1045,14 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                           acc[order.supplier].value += order.totalValue;
                           return acc;
                         }, {} as Record<string, { count: number; value: number }>);
-                        
+
                         return Object.entries(groupedBySupplier).map(([supplier, data], subIndex) => (
                           <tr key={`${index}-${subIndex}`} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {delivery.week.toLocaleDateString('ru-RU', { 
-                                day: 'numeric', 
-                                month: 'short', 
-                                year: 'numeric' 
+                              {delivery.week.toLocaleDateString('ru-RU', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric'
                               })}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -1089,12 +1080,12 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                     <div className="p-4 bg-green-50 border-l-4 border-green-500">
                       <h4 className="font-medium text-green-900 mb-2">Высокий потенциал улучшения</h4>
                       <p className="text-sm text-green-800">
-                        Оптимизация портфеля может увеличить ROI на {portfolioOptimization.improvement.roi.toFixed(1)}%. 
+                        Оптимизация портфеля может увеличить ROI на {portfolioOptimization.improvement.roi.toFixed(1)}%.
                         Рекомендуем пересмотреть текущую структуру закупок.
                       </p>
                     </div>
                   )}
-                  
+
                   {portfolioOptimization.improvement.risk < -10 && (
                     <div className="p-4 bg-blue-50 border-l-4 border-blue-500">
                       <h4 className="font-medium text-blue-900 mb-2">Снижение риска</h4>
@@ -1104,7 +1095,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       </p>
                     </div>
                   )}
-                  
+
                   {Array.from(portfolioOptimization.optimal.currencyExposure).length > 1 && (
                     <div className="p-4 bg-yellow-50 border-l-4 border-yellow-500">
                       <h4 className="font-medium text-yellow-900 mb-2">Валютная диверсификация</h4>

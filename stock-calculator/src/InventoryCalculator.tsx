@@ -13,22 +13,22 @@ import ScenariosTab from "./components/ScenariosTab";
 import PortfolioSettingsTab from "./components/PortfolioSettingsTab";
 
 // Импорт типов
-import { 
-  ChartPoint, 
-  Product, 
-  ProductWithCategory, 
-  Scenario, 
+import {
+  ChartPoint,
+  Product,
+  ProductWithCategory,
+  Scenario,
   MonteCarloParams,
-  ProductForm 
+  ProductForm
 } from "./types";
 
 // Импорт математических и расчетных функций
-import { 
-  inverseNormal, 
+import {
+  inverseNormal,
   blackScholesCall
 } from "./utils/mathFunctions";
 
-import { 
+import {
   mcDemandLoss,
   getEffectivePurchasePrice,
   calculateExpectedRevenue,
@@ -38,7 +38,7 @@ import {
 } from "./utils/inventoryCalculations";
 import { updateProductsFromSales, updateProductsFromSalesAndStocks } from "./utils/inventoryCalculations";
 import { calculateAdjustedLeadTime, calculateHistoricalLeadTime, calculateLandedCost } from "./utils/logisticsCalculations";
-import { supabase } from "./utils/supabaseClient";
+
 import { fetchCbrRateToRub } from "./utils/fx";
 
 const InventoryOptionCalculator = () => {
@@ -60,29 +60,29 @@ const InventoryOptionCalculator = () => {
   const [sigmaWeek] = useState(0.35 * (800 / 13)); // σ спроса
   const [series, setSeries] = useState<ChartPoint[]>([]);
   const [calcMethodUsed, setCalcMethodUsed] = useState<'closed' | 'mc'>('closed');
-  
+
   /* ----- ассортимент ----- */
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
-  
+
   // Вкладки (восстанавливаем последнюю открытую)
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      try { return window.localStorage.getItem('activeTab') || 'dashboard'; } catch {}
+      try { return window.localStorage.getItem('activeTab') || 'dashboard'; } catch { }
     }
     return 'dashboard';
   });
   useEffect(() => {
-    try { if (typeof window !== 'undefined') window.localStorage.setItem('activeTab', activeTab); } catch {}
+    try { if (typeof window !== 'undefined') window.localStorage.setItem('activeTab', activeTab); } catch { }
   }, [activeTab]);
-  
+
   // Сценарный анализ
   const [scenarios] = useState<Scenario[]>([
     { name: "Пессимистичный", muWeekMultiplier: 0.7, sigmaWeekMultiplier: 1.3, probability: 0.25 },
     { name: "Базовый", muWeekMultiplier: 1.0, sigmaWeekMultiplier: 1.0, probability: 0.5 },
     { name: "Оптимистичный", muWeekMultiplier: 1.3, sigmaWeekMultiplier: 0.8, probability: 0.25 }
   ]);
-  
+
   // Для графиков
   const [selectedProductId] = useState<number | null>(null);
 
@@ -122,7 +122,7 @@ const InventoryOptionCalculator = () => {
         const v = window.localStorage.getItem('calcMethod');
         if (v === 'closed' || v === 'mc') savedMethod = v;
       }
-    } catch {}
+    } catch { }
     return {
       iterations: 1000,
       showAdvanced: false,
@@ -138,44 +138,44 @@ const InventoryOptionCalculator = () => {
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('calcMethod', monteCarloParams.method ?? 'closed');
       }
-    } catch {}
+    } catch { }
   }, [monteCarloParams.method]);
 
 
 
   // Демо данные
   const demoProducts = useMemo((): Product[] => [
-    { 
-      id: 1, name: "iPhone 15 Case", sku: "SKU001", purchase: 7.5, margin: 18, 
+    {
+      id: 1, name: "iPhone 15 Case", sku: "SKU001", purchase: 7.5, margin: 18,
       muWeek: 75, sigmaWeek: 25, revenue: 0, optQ: 0, optValue: 0, safety: 0,
       currency: 'USD', supplier: 'china', category: 'Электроника', volume: 0.001,
       importCnyPerUnit: 21, importUnitsPerBatch: 1171, importWeightKgPerBatch: 382, importUsdPerKg: 3
     },
-    { 
-      id: 2, name: "Samsung TV 55\"", sku: "SKU002", purchase: 12.0, margin: 22, 
+    {
+      id: 2, name: "Samsung TV 55\"", sku: "SKU002", purchase: 12.0, margin: 22,
       muWeek: 55, sigmaWeek: 18, revenue: 0, optQ: 0, optValue: 0, safety: 0,
       currency: 'EUR', supplier: 'europe', category: 'Электроника', volume: 0.15,
       importCnyPerUnit: 21, importUnitsPerBatch: 1171, importWeightKgPerBatch: 382, importUsdPerKg: 3
     },
-    { 
-      id: 3, name: "Футболка Uniqlo", sku: "SKU003", purchase: 4.2, margin: 8.5, 
+    {
+      id: 3, name: "Футболка Uniqlo", sku: "SKU003", purchase: 4.2, margin: 8.5,
       muWeek: 130, sigmaWeek: 45, revenue: 0, optQ: 0, optValue: 0, safety: 0,
       currency: 'CNY', supplier: 'china', category: 'Одежда', volume: 0.002,
-      seasonality: { 
-        enabled: true, 
+      seasonality: {
+        enabled: true,
         monthlyFactors: [0.5, 0.5, 0.8, 1.2, 1.5, 2.0, 2.0, 1.8, 1.2, 0.8, 0.5, 0.5],
         currentMonth: new Date().getMonth()
       },
       importCnyPerUnit: 21, importUnitsPerBatch: 1171, importWeightKgPerBatch: 382, importUsdPerKg: 3
     },
-    { 
-      id: 4, name: "Кофемашина DeLonghi", sku: "SKU004", purchase: 18.5, margin: 35, 
+    {
+      id: 4, name: "Кофемашина DeLonghi", sku: "SKU004", purchase: 18.5, margin: 35,
       muWeek: 25, sigmaWeek: 10, revenue: 0, optQ: 0, optValue: 0, safety: 0,
       currency: 'RUB', supplier: 'domestic', category: 'Бытовая техника', volume: 0.05,
       importCnyPerUnit: 21, importUnitsPerBatch: 1171, importWeightKgPerBatch: 382, importUsdPerKg: 3
     },
-    { 
-      id: 5, name: "Наушники Sony WH-1000XM5", sku: "SKU005", purchase: 5.0, margin: 12, 
+    {
+      id: 5, name: "Наушники Sony WH-1000XM5", sku: "SKU005", purchase: 5.0, margin: 12,
       muWeek: 95, sigmaWeek: 30, revenue: 0, optQ: 0, optValue: 0, safety: 0,
       currency: 'USD', supplier: 'usa', category: 'Электроника', volume: 0.003,
       minOrderQty: 10, maxStorageQty: 500,
@@ -186,15 +186,15 @@ const InventoryOptionCalculator = () => {
   // ABC-анализ ассортимента
   const abcAnalysis = useCallback((items: Product[]): ProductWithCategory[] => {
     if (!items || items.length === 0) return [];
-    
+
     const sortedItems = [...items].sort((a, b) => b.revenue - a.revenue);
     const totalRevenue = sortedItems.reduce((sum, item) => sum + item.revenue, 0);
     let accumulatedPercent = 0;
-    
+
     return sortedItems.map(item => {
       const percent = item.revenue / totalRevenue;
       accumulatedPercent += percent;
-      
+
       let category: 'A' | 'B' | 'C';
       if (accumulatedPercent <= 0.8) {
         category = 'A';
@@ -203,7 +203,7 @@ const InventoryOptionCalculator = () => {
       } else {
         category = 'C';
       }
-      
+
       return { ...item, category, percent, accumPercent: accumulatedPercent };
     });
   }, []);
@@ -215,7 +215,7 @@ const InventoryOptionCalculator = () => {
 
   // Обертка для calculateExpectedRevenue
   const calculateExpectedRevenueWrapper = useCallback((
-    q: number, muWeek: number, sigmaWeek: number, weeks: number, 
+    q: number, muWeek: number, sigmaWeek: number, weeks: number,
     purchase: number, margin: number, rushProb: number, rushSave: number
   ) => {
     return calculateExpectedRevenue(q, muWeek, sigmaWeek, weeks, purchase, margin, rushProb, rushSave, mcDemandLossWrapper, monteCarloParams);
@@ -224,7 +224,7 @@ const InventoryOptionCalculator = () => {
   // Расчет оптимальных параметров для текущего товара
   useEffect(() => {
     console.log('Пересчет оптимальных параметров. Monte Carlo итераций:', monteCarloParams.iterations);
-    
+
     const z = inverseNormal(csl);
     const calculatedSafety = Math.ceil(z * sigmaWeek * Math.sqrt(weeks));
 
@@ -257,18 +257,18 @@ const InventoryOptionCalculator = () => {
   // Расчет оптимальных параметров для всего ассортимента
   const productsWithMetrics = useMemo(() => {
     console.log('Пересчет productsWithMetrics. Monte Carlo итераций:', monteCarloParams.iterations);
-    
+
     return products.map(product => {
       const z = inverseNormal(csl);
-      
+
       // Используем средний сезонный спрос для расчетов
       const seasonalMuWeek = getAverageSeasonalDemand(product.muWeek, product.seasonality, weeks);
       const productSafety = Math.ceil(z * product.sigmaWeek * Math.sqrt(weeks));
-      
+
       const step = Math.max(1, Math.round(seasonalMuWeek / 10));
       const minQ = product.minOrderQty || 0;
       const maxQ = product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits;
-      
+
       let effectiveWeeks = weeks;
       if (product.shelfLife && product.shelfLife > 0) {
         effectiveWeeks = Math.min(weeks, product.shelfLife);
@@ -285,11 +285,11 @@ const InventoryOptionCalculator = () => {
         return optionValue;
       };
       let { bestQ, bestValue: bestNet } = optimizeQuantity(minQ, maxQ, step, evaluateQ2);
-      
+
       if (product.minOrderQty && bestQ < product.minOrderQty) {
         bestQ = product.minOrderQty;
       }
-      
+
       return {
         ...product,
         optQ: bestQ,
@@ -347,35 +347,35 @@ const InventoryOptionCalculator = () => {
     }
 
     const validationErrors: string[] = [];
-    
+
     if (productForm.purchase <= 0) {
       validationErrors.push('Закупочная цена должна быть положительной');
     }
-    
+
     if (productForm.margin <= 0) {
       validationErrors.push('Маржа должна быть положительной');
     }
-    
+
     const marginRate = productForm.margin / productForm.purchase;
     if (marginRate < 0.1 && productForm.purchase > 0) {
       validationErrors.push('Слишком низкая рентабельность (< 10%)');
     }
-    
+
     if (productForm.muWeek <= 0) {
       validationErrors.push('Средний спрос должен быть положительным');
     }
-    
+
     if (productForm.sigmaWeek < 0) {
       validationErrors.push('Стандартное отклонение не может быть отрицательным');
     }
-    
+
     if (productForm.muWeek > 0) {
       const cv = productForm.sigmaWeek / productForm.muWeek;
       if (cv > 2) {
         validationErrors.push('Слишком высокая волатильность спроса (CV > 200%)');
       }
     }
-    
+
     if (validationErrors.length > 0) {
       toast.error('Ошибки валидации:\n' + validationErrors.join('\n'));
       return;
@@ -497,19 +497,14 @@ const InventoryOptionCalculator = () => {
   useEffect(() => {
     const hydrateFromDb = async () => {
       try {
-        const { data: session } = await supabase.auth.getUser();
-        const user = session?.user;
-        if (!user) return;
         if (products.length > 0) return;
 
+        const loadLocal = (key: string) => { const s = localStorage.getItem(key); return s ? JSON.parse(s) : []; };
+
         // 1) Остатки -> currentStock, разрез по складам и автосоздание карточек
-        const { data: stocks, error: stocksErr } = await supabase
-          .from('wb_stocks')
-          .select('sku, quantity, warehouse, date, raw')
-          .eq('user_id', user.id)
-          .order('date', { ascending: true })
-          .limit(100000);
-        if (stocksErr) return;
+        const stocks = loadLocal('wb_stocks');
+        stocks.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        if (!stocks || stocks.length === 0) return;
 
         const totals = new Map<string, number>();
         const stockHistory: Array<{ sku: string; date: string; quantity: number }> = [];
@@ -518,7 +513,7 @@ const InventoryOptionCalculator = () => {
         let priceSnapshot: Map<string, { price?: number; discounted?: number; discount?: number; vendor?: string }> | null = null;
         const byWarehouseLatest = new Map<string, Map<string, { qty: number; date: number }>>(); // sku -> wh -> {qty, ts}
         // Нормализация названий складов WB
-        const normalizeWarehouse = (w?: string|null) => {
+        const normalizeWarehouse = (w?: string | null) => {
           let s = (w && String(w).trim()) ? String(w).trim() : 'UNKNOWN';
           const l = s.toLowerCase();
           if (l.includes('коледин')) return 'Коледино';
@@ -553,7 +548,7 @@ const InventoryOptionCalculator = () => {
           const subj = typeof r.raw?.subject === 'string' ? r.raw.subject : undefined;
           // Название берем строго из vendorCode / supplierArticle. Никаких raw.name
           const name = typeof r.raw?.vendorCode === 'string' ? r.raw.vendorCode
-                       : (typeof r.raw?.supplierArticle === 'string' ? r.raw.supplierArticle : undefined);
+            : (typeof r.raw?.supplierArticle === 'string' ? r.raw.supplierArticle : undefined);
           if (subj && !subjBySku.has(sku)) subjBySku.set(sku, subj);
           if (name && !nameBySku.has(sku)) nameBySku.set(sku, name);
           const whRaw = (r.warehouse || r.raw?.warehouseName || 'Склад WB').toString();
@@ -586,7 +581,7 @@ const InventoryOptionCalculator = () => {
             // eslint-disable-next-line no-console
             console.log(`WB stocks debug for ${debugSku} total=${total}`);
           }
-        } catch {}
+        } catch { }
 
         const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
         let initialProducts: Product[] = Array.from(totals.keys()).map((sku, idx) => ({
@@ -616,11 +611,7 @@ const InventoryOptionCalculator = () => {
 
         // 2) Обогащение названий/категорий из цен/аналитики WB
         try {
-          const { data: prices } = await supabase
-            .from('wb_prices')
-            .select('nm_id, price, discounted_price, discount, raw')
-            .eq('user_id', user.id)
-            .limit(50000);
+          const prices = loadLocal('wb_prices');
           const byNm = new Map<string, { price?: number; discounted?: number; discount?: number; vendor?: string }>();
           (prices || []).forEach((p: any) => {
             const sku = String(p.nm_id);
@@ -636,13 +627,9 @@ const InventoryOptionCalculator = () => {
           });
           // применим к initialProducts позже
           priceSnapshot = byNm;
-        } catch {}
+        } catch { }
         try {
-          const { data: an } = await supabase
-            .from('wb_analytics')
-            .select('nm_id, raw')
-            .eq('user_id', user.id)
-            .limit(50000);
+          const an = loadLocal('wb_analytics');
           (an || []).forEach((a: any) => {
             const sku = String(a.nm_id);
             // Название строго vendorCode -> supplierArticle
@@ -651,15 +638,11 @@ const InventoryOptionCalculator = () => {
             if (vendor && !nameBySku.has(sku)) nameBySku.set(sku, vendor);
             if (cat) subjBySku.set(sku, cat);
           });
-        } catch {}
+        } catch { }
 
         // 3) Продажи -> пересчет mu/sigma и метрик + дозаказ названий из supplierArticle
-        const { data: sales, error: salesErr } = await supabase
-          .from('wb_sales')
-          .select('date, sku, units, revenue, raw')
-          .eq('user_id', user.id)
-          .limit(20000);
-        if (!salesErr && (sales || []).length > 0) {
+        const sales = loadLocal('wb_sales');
+        if ((sales || []).length > 0) {
           const salesRecords = (sales || []).map((r: any) => ({
             date: r.date,
             sku: String(r.sku),
@@ -700,35 +683,27 @@ const InventoryOptionCalculator = () => {
 
           // Подтянем затраты по SKU из wb_costs (самые свежие) и обновим purchase
           try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              const { data: costs } = await supabase
-                .from('wb_costs')
-                .select('date, sku, purchase_amount, purchase_currency, logistics_amount, logistics_currency, fx_rate')
-                .eq('user_id', user.id)
-                .order('date', { ascending: true })
-                .limit(100000);
-              const latestBySku = new Map<string, any>();
-              (costs || []).forEach((r: any) => { latestBySku.set(String(r.sku), r); });
-              initialProducts = await Promise.all(initialProducts.map(async (p) => {
-                const c = latestBySku.get(p.sku);
-                if (!c) return p;
-                const dateISO = c.date || new Date().toISOString();
-                const purchCur = (c.purchase_currency || 'RUB').toUpperCase();
-                const logCur = (c.logistics_currency || purchCur).toUpperCase();
-                let fxPurch = typeof c.fx_rate === 'number' ? c.fx_rate : null;
-                if (!fxPurch && purchCur !== 'RUB') fxPurch = await fetchCbrRateToRub(purchCur, dateISO) || null;
-                const purchRub = typeof c.purchase_amount === 'number' ? (purchCur === 'RUB' ? c.purchase_amount : (fxPurch ? c.purchase_amount * fxPurch : null)) : null;
-                let fxLog = purchCur === logCur ? fxPurch : null;
-                if (!fxLog && logCur !== 'RUB') fxLog = await fetchCbrRateToRub(logCur, dateISO) || null;
-                const logRub = typeof c.logistics_amount === 'number' ? (logCur === 'RUB' ? c.logistics_amount : (fxLog ? c.logistics_amount * fxLog : null)) : null;
-                const newPurchase = (typeof purchRub === 'number' ? purchRub : p.purchase) + (typeof logRub === 'number' ? logRub : 0);
-                const hasRetail = typeof p.retailPrice === 'number' && p.retailPrice! > 0;
-                const margin = hasRetail ? Math.max(0, Number(p.retailPrice) - Number(newPurchase)) : p.margin;
-                return { ...p, purchase: newPurchase, margin };
-              }));
-            }
-          } catch {}
+            const costs = loadLocal('wb_costs').sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            const latestBySku = new Map<string, any>();
+            (costs || []).forEach((r: any) => { latestBySku.set(String(r.sku), r); });
+            initialProducts = await Promise.all(initialProducts.map(async (p) => {
+              const c = latestBySku.get(p.sku);
+              if (!c) return p;
+              const dateISO = c.date || new Date().toISOString();
+              const purchCur = (c.purchase_currency || 'RUB').toUpperCase();
+              const logCur = (c.logistics_currency || purchCur).toUpperCase();
+              let fxPurch = typeof c.fx_rate === 'number' ? c.fx_rate : null;
+              if (!fxPurch && purchCur !== 'RUB') fxPurch = await fetchCbrRateToRub(purchCur, dateISO) || null;
+              const purchRub = typeof c.purchase_amount === 'number' ? (purchCur === 'RUB' ? c.purchase_amount : (fxPurch ? c.purchase_amount * fxPurch : null)) : null;
+              let fxLog = purchCur === logCur ? fxPurch : null;
+              if (!fxLog && logCur !== 'RUB') fxLog = await fetchCbrRateToRub(logCur, dateISO) || null;
+              const logRub = typeof c.logistics_amount === 'number' ? (logCur === 'RUB' ? c.logistics_amount : (fxLog ? c.logistics_amount * fxLog : null)) : null;
+              const newPurchase = (typeof purchRub === 'number' ? purchRub : p.purchase) + (typeof logRub === 'number' ? logRub : 0);
+              const hasRetail = typeof p.retailPrice === 'number' && p.retailPrice! > 0;
+              const margin = hasRetail ? Math.max(0, Number(p.retailPrice) - Number(newPurchase)) : p.margin;
+              return { ...p, purchase: newPurchase, margin };
+            }));
+          } catch { }
           // Пересчитаем маржу как (розничная цена - себестоимость), если обе известны (fallback)
           initialProducts = initialProducts.map(p => {
             const hasRetail = typeof p.retailPrice === 'number' && p.retailPrice! > 0;
@@ -739,11 +714,7 @@ const InventoryOptionCalculator = () => {
           // анализ продаж уже учтен при пересчете, но отдельно посчитаем 30д если есть sales в БД
           try {
             const since = new Date(); since.setDate(since.getDate() - 30);
-            const { data: sales30 } = await supabase
-              .from('wb_sales')
-              .select('sku, units, revenue, date')
-              .eq('user_id', user.id)
-              .gte('date', since.toISOString());
+            const sales30 = loadLocal('wb_sales').filter((r: any) => new Date(r.date) >= since);
             const agg = new Map<string, { units: number; revenue: number }>();
             (sales30 || []).forEach((r: any) => {
               const sku = String(r.sku);
@@ -756,15 +727,11 @@ const InventoryOptionCalculator = () => {
               const s = agg.get(p.sku);
               return s ? { ...p, sales30d: s.units, revenue30d: s.revenue } : p;
             });
-          } catch {}
+          } catch { }
           // 12 месяцев
           try {
             const since12 = new Date(); since12.setFullYear(since12.getFullYear() - 1);
-            const { data: sales12 } = await supabase
-              .from('wb_sales')
-              .select('sku, units, revenue, date')
-              .eq('user_id', user.id)
-              .gte('date', since12.toISOString());
+            const sales12 = loadLocal('wb_sales').filter((r: any) => new Date(r.date) >= since12);
             const agg12 = new Map<string, { units: number; revenue: number }>();
             (sales12 || []).forEach((r: any) => {
               const sku = String(r.sku);
@@ -777,26 +744,13 @@ const InventoryOptionCalculator = () => {
               const s = agg12.get(p.sku);
               return s ? { ...p, sales12m: s.units, revenue12m: s.revenue } : p;
             });
-          } catch {}
+          } catch { }
           // анализ поставок — цикл пополнения и ROP с учетом рисков
           try {
-            const { data: purchases } = await supabase
-              .from('wb_purchases')
-              .select('sku, date, quantity')
-              .eq('user_id', user.id)
-              .order('date', { ascending: true })
-              .limit(50000);
+            const purchases = loadLocal('wb_purchases').sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-            // Избегаем вложенного select (REST 400). Грузим отдельно и объединяем на клиенте
-            const { data: ordersRaw } = await supabase
-              .from('wb_purchase_orders')
-              .select('id, created_at, country, total_cost, logistics_cost')
-              .eq('user_id', user.id);
-
-            const { data: itemsRaw } = await supabase
-              .from('wb_purchase_order_items')
-              .select('po_id, sku, qty, unit_cost, warehouse_target')
-              .eq('user_id', user.id);
+            const ordersRaw = loadLocal('wb_purchase_orders');
+            const itemsRaw = loadLocal('wb_purchase_order_items');
 
             const itemsByOrder = new Map<string, any[]>();
             (itemsRaw || []).forEach((it: any) => {
@@ -809,10 +763,7 @@ const InventoryOptionCalculator = () => {
               items: itemsByOrder.get(o.id) || []
             }));
 
-            const { data: logisticsEvents } = await supabase
-              .from('logistics_calendar')
-              .select('*')
-              .eq('user_id', user.id);
+            const logisticsEvents = loadLocal('logistics_calendar');
 
             // Базовый анализ интервалов поставок WB
             const bySku = new Map<string, Array<Date>>();
@@ -827,9 +778,9 @@ const InventoryOptionCalculator = () => {
             bySku.forEach((dates, sku) => {
               if (dates.length < 2) return;
               let sum = 0; let cnt = 0;
-              for (let i=1;i<dates.length;i++){ sum += (dates[i].getTime()-dates[i-1].getTime()); cnt++; }
+              for (let i = 1; i < dates.length; i++) { sum += (dates[i].getTime() - dates[i - 1].getTime()); cnt++; }
               const avgMs = sum / cnt;
-              const weeks = Math.max(1, Math.round(avgMs / (7*24*3600*1000)));
+              const weeks = Math.max(1, Math.round(avgMs / (7 * 24 * 3600 * 1000)));
               baseReplenishment.set(sku, weeks);
             });
 
@@ -882,10 +833,10 @@ const InventoryOptionCalculator = () => {
 
           setProducts(initialProducts);
         }
-      } catch {}
+      } catch { }
     };
     void hydrateFromDb();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
@@ -896,12 +847,12 @@ const InventoryOptionCalculator = () => {
       toast.error('Нет данных для экспорта');
       return;
     }
-    
-    const headers = ['SKU', 'Название', 'Закупочная цена', 'Маржа', 'Средний спрос/нед', 'Станд. откл./нед', 
-                     'Срок годности (нед)', 'Мин. заказ', 'Макс. склад', 'Валюта', 'Поставщик', 'Категория', 
-                     'Объем', 'Текущий запас', 'Сезонность включена', 'Сезонные факторы', 'Текущий месяц',
-                     'Оптим. заказ', 'Ценность опциона', 'Safety-stock'];
-    
+
+    const headers = ['SKU', 'Название', 'Закупочная цена', 'Маржа', 'Средний спрос/нед', 'Станд. откл./нед',
+      'Срок годности (нед)', 'Мин. заказ', 'Макс. склад', 'Валюта', 'Поставщик', 'Категория',
+      'Объем', 'Текущий запас', 'Сезонность включена', 'Сезонные факторы', 'Текущий месяц',
+      'Оптим. заказ', 'Ценность опциона', 'Safety-stock'];
+
     const data = productsWithMetrics.map(p => [
       p.sku,
       p.name,
@@ -924,7 +875,7 @@ const InventoryOptionCalculator = () => {
       p.optValue.toFixed(2),
       p.safety
     ]);
-    
+
     const csvContent = [headers, ...data].map(e => e.map(cell => {
       // Экранируем значения, содержащие запятые или кавычки
       const cellStr = String(cell);
@@ -933,7 +884,7 @@ const InventoryOptionCalculator = () => {
       }
       return cellStr;
     }).join(',')).join('\n');
-    
+
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -943,36 +894,36 @@ const InventoryOptionCalculator = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     toast.success('Данные экспортированы в CSV');
   }, [products, productsWithMetrics]);
 
   const importFromCSV = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
       const lines = text.split('\n').map(line => line.trim()).filter(line => line);
       const header = lines[0].split(',').map(h => h.trim());
-      
+
       if (!header.includes('SKU') || !header.includes('Название')) {
         toast.error('Неверный формат файла. Убедитесь, что первая строка содержит заголовки колонок.');
         return;
       }
-      
+
       const newProducts: Product[] = [];
-      
+
       // Функция для парсинга CSV строки с учетом кавычек
       const parseCSVLine = (line: string): string[] => {
         const result: string[] = [];
         let current = '';
         let inQuotes = false;
-        
+
         for (let i = 0; i < line.length; i++) {
           const char = line[i];
-          
+
           if (char === '"') {
             if (inQuotes && line[i + 1] === '"') {
               current += '"';
@@ -987,24 +938,24 @@ const InventoryOptionCalculator = () => {
             current += char;
           }
         }
-        
+
         result.push(current);
         return result;
       };
-      
+
       // Создаем индексы колонок
       const indices: { [key: string]: number } = {};
       header.forEach((col, index) => {
         indices[col] = index;
       });
-      
+
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
-        
+
         const values = parseCSVLine(line);
         if (values.length < 6) continue;
-        
+
         const product: Product = {
           id: generateNextId() + i - 1,
           sku: values[indices['SKU']] || generateNextSku(),
@@ -1027,22 +978,22 @@ const InventoryOptionCalculator = () => {
           safety: 0,
           seasonality: {
             enabled: values[indices['Сезонность включена']] === 'да',
-            monthlyFactors: values[indices['Сезонные факторы']] 
+            monthlyFactors: values[indices['Сезонные факторы']]
               ? values[indices['Сезонные факторы']].split(';').map(f => parseFloat(f) || 1)
               : [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             currentMonth: parseInt(values[indices['Текущий месяц']] || '0') || new Date().getMonth()
           }
         };
-        
+
         // Убедимся, что у нас есть 12 факторов сезонности
         if (product.seasonality && product.seasonality.monthlyFactors.length !== 12) {
           product.seasonality.monthlyFactors = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
         }
-        
+
         product.revenue = product.muWeek * (product.purchase + product.margin) * 52;
         newProducts.push(product);
       }
-      
+
       if (newProducts.length > 0) {
         setProducts(newProducts);
         toast.success(`Импортировано ${newProducts.length} товаров`);
@@ -1050,7 +1001,7 @@ const InventoryOptionCalculator = () => {
         toast.error('Не удалось импортировать данные. Проверьте формат файла.');
       }
     };
-    
+
     reader.readAsText(file);
     event.target.value = '';
   }, [generateNextId, generateNextSku]);
@@ -1065,12 +1016,12 @@ const InventoryOptionCalculator = () => {
   return (
     <>
       <Toaster position="top-right" />
-      <SimpleLayout 
+      <SimpleLayout
         activeTab={activeTab}
         onTabChange={setActiveTab}
         productsCount={products.length}
       >
-                {activeTab === "dashboard" && (
+        {activeTab === "dashboard" && (
           <Dashboard
             products={products}
             productsWithMetrics={abcAnalysisResult}
@@ -1090,11 +1041,11 @@ const InventoryOptionCalculator = () => {
             riskConfidence={monteCarloParams.confidenceLevel}
           />
         )}
-        
+
         {activeTab === "theory" && <TheoryTab />}
-        
+
         {activeTab === "settings" && (
-          <SettingsTab 
+          <SettingsTab
             maxUnits={maxUnits}
             setMaxUnits={setMaxUnits}
             weeks={weeks}
@@ -1115,14 +1066,14 @@ const InventoryOptionCalculator = () => {
             setMonteCarloParams={setMonteCarloParams}
           />
         )}
-        
+
         {activeTab === "supplies" && (
           // eslint-disable-next-line react/jsx-no-undef
           <SuppliesTab />
         )}
-        
+
         {activeTab === "assortment" && (
-          <AssortmentTab 
+          <AssortmentTab
             products={productsWithMetrics}
             showProductForm={showProductForm}
             setShowProductForm={setShowProductForm}
@@ -1137,7 +1088,7 @@ const InventoryOptionCalculator = () => {
             selectProductForAnalysis={selectProductForAnalysis}
           />
         )}
-        
+
         {activeTab === "productAnalysis" && (
           <ProductAnalysisTab
             selectedProduct={selectedProduct}
@@ -1160,7 +1111,7 @@ const InventoryOptionCalculator = () => {
             setMonteCarloParams={setMonteCarloParams}
           />
         )}
-        
+
         {activeTab === "export" && (
           <ExportImportTab
             products={products}
@@ -1171,11 +1122,11 @@ const InventoryOptionCalculator = () => {
             selectedWarehouse={selectedWarehouse}
           />
         )}
-        
+
         {activeTab === "abc" && (
           <ABCAnalysisTab products={abcAnalysisResult} />
         )}
-        
+
         {activeTab === "scenarios" && (
           <ScenariosTab
             products={productsWithMetrics}
@@ -1190,11 +1141,11 @@ const InventoryOptionCalculator = () => {
             monteCarloParams={monteCarloParams}
           />
         )}
-        
+
         {activeTab === "portfolioSettings" && (
           <PortfolioSettingsTab />
         )}
-        
+
       </SimpleLayout>
     </>
   );
