@@ -48,10 +48,10 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
   setMonteCarloParams
 }) => {
   const [testQuantity, setTestQuantity] = useState(0);
-  
+
   const product = productsWithMetrics.find(p => p.id === selectedProduct);
   const fmtRub = (n: number) => new Intl.NumberFormat('ru-RU').format(Math.round(n || 0));
-  
+
   // Обновляем testQuantity при смене товара
   React.useEffect(() => {
     if (product) {
@@ -65,7 +65,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
     const data: ChartPoint[] = [];
     const targetPoints = 50;
     const step = Math.max(10, Math.round(maxUnits / targetPoints));
-    
+
     for (let q = 0; q <= maxUnits; q += step) {
       const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
       const S = calculateExpectedRevenueWrapper(q, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
@@ -75,7 +75,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
       const { optionValue } = blackScholesCall(S, K, T, sigma, r);
       data.push({ q, value: optionValue });
     }
-    
+
     // Добавляем ключевые точки
     const keyPoints = [product.optQ, product.safety];
     keyPoints.forEach(keyPoint => {
@@ -89,7 +89,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
         data.push({ q: keyPoint, value: optionValue });
       }
     });
-    
+
     return data.sort((a, b) => a.q - b.q);
   }, [product, maxUnits, weeks, rushProb, rushSave, hold, r, getEffectivePurchasePrice, calculateExpectedRevenueWrapper, calculateVolatility, blackScholesCall]);
 
@@ -102,14 +102,14 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
       revenue: 0,
       roi: 0
     };
-    
+
     const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
     const S = calculateExpectedRevenueWrapper(q, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
     const K = q * effectivePurchase * (1 + r * weeks / 52) + q * hold * weeks;
     const T = weeks / 52;
     const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q, rushProb, product.currency, product.supplier);
     const { optionValue } = blackScholesCall(S, K, T, sigma, r);
-    
+
     return {
       value: optionValue,
       investment: q * effectivePurchase,
@@ -118,7 +118,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
       roi: q > 0 ? (optionValue / (q * effectivePurchase)) * 100 : 0
     };
   }, [product, weeks, rushProb, rushSave, hold, r, getEffectivePurchasePrice, calculateExpectedRevenueWrapper, calculateVolatility, blackScholesCall]);
-  
+
   const currentMetrics = calcMetricsForQ(testQuantity);
   const optimalMetrics = calcMetricsForQ(product?.optQ || 0);
 
@@ -164,7 +164,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
   const periodStats = React.useMemo(() => {
     const fallback = { units30d: product?.sales30d || 0, revenue30d: product?.revenue30d || 0, units12m: product?.sales12m || 0, revenue12m: product?.revenue12m || 0 };
     if (!product) return fallback;
-    const sales = (product as any)?.salesHistory as Array<{ date: string; units?: number; revenue?: number }>|undefined;
+    const sales = (product as any)?.salesHistory as Array<{ date: string; units?: number; revenue?: number }> | undefined;
     if (!sales || sales.length === 0) return fallback;
     const now = new Date();
     const msDay = 24 * 60 * 60 * 1000;
@@ -190,7 +190,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
         <p className="text-gray-500">Товар не найден. Выберите товар для анализа.</p>
-        <button 
+        <button
           onClick={() => setActiveTab('assortment')}
           className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
@@ -209,12 +209,11 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-semibold">Анализ товара: {product.name} ({product.sku})</h3>
         <div className="flex gap-2">
-          <button 
+          <button
             className="px-3 py-1 bg-gray-100 text-gray-700 rounded border hover:bg-gray-50"
             onClick={async () => {
               try {
-                const today = new Date().toISOString().split('T')[0];
-                const cnyRes = await fetch(`/api/db-load?table=fx_rates&limit=1`, { headers: { Authorization: 'Bearer dummy' } }).catch(() => null);
+                await fetch(`/api/db-load?table=fx_rates&limit=1`, { headers: { Authorization: 'Bearer dummy' } }).catch(() => null);
                 // Поскольку серверного токена нет в клиенте, просто дернем CBR напрямую
                 const cbrCny = await fetch(`https://www.cbr-xml-daily.ru/daily_json.js`).then(r => r.json()).catch(() => null);
                 const val = cbrCny?.Valute?.CNY;
@@ -222,12 +221,12 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
                 if (val?.Value) (window as any).FX_CNY_RUB = val.Value / (val.Nominal || 1);
                 if (usd?.Value) (window as any).FX_USD_RUB = usd.Value / (usd.Nominal || 1);
                 toast.success('Курсы ЦБ обновлены для расчета тестовой партии');
-              } catch {}
+              } catch { }
             }}
           >
             Обновить курсы ЦБ
           </button>
-          <button 
+          <button
             className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600"
             onClick={() => {
               editProduct(product);
@@ -238,7 +237,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           </button>
         </div>
       </div>
-      
+
       {/* Основные характеристики товара */}
       <div className="mb-6">
         <h4 className="text-md font-semibold mb-3">Параметры товара</h4>
@@ -262,7 +261,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             <div className="text-lg font-bold">₽{fmtRub(annualRevenueRub)}</div>
           </div>
         </div>
-        
+
         {/* Розничная цена и продажи */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
           <div className="bg-gray-100 p-3 rounded">
@@ -351,13 +350,13 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             </div>
           </div>
           {testChinaBatch && (
-          <div className="mt-3 p-2 bg-white border rounded text-xs text-green-800">
-            <div className="font-semibold mb-1">Тестовая партия из Китая (для оценки)</div>
-            <div>Количество: {testChinaBatch.qty} шт</div>
-            <div>Себестоимость ({product?.importCnyPerUnit ?? 21} юань/шт): ₽{fmtRub(testChinaBatch.unitCostRub)} за шт</div>
-            <div>Логистика ({product?.importUsdPerKg ?? 3} $/кг, {product?.importWeightKgPerBatch ?? 382} кг): всего ₽{fmtRub(testChinaBatch.logisticsRubTotal)} ≈ ₽{fmtRub(testChinaBatch.logisticsPerUnitRub)} за шт</div>
-            <div className="font-medium">Итого ориентировочно: ₽{fmtRub(testChinaBatch.fullUnitCostRub)} за шт</div>
-          </div>
+            <div className="mt-3 p-2 bg-white border rounded text-xs text-green-800">
+              <div className="font-semibold mb-1">Тестовая партия из Китая (для оценки)</div>
+              <div>Количество: {testChinaBatch.qty} шт</div>
+              <div>Себестоимость ({product?.importCnyPerUnit ?? 21} юань/шт): ₽{fmtRub(testChinaBatch.unitCostRub)} за шт</div>
+              <div>Логистика ({product?.importUsdPerKg ?? 3} $/кг, {product?.importWeightKgPerBatch ?? 382} кг): всего ₽{fmtRub(testChinaBatch.logisticsRubTotal)} ≈ ₽{fmtRub(testChinaBatch.logisticsPerUnitRub)} за шт</div>
+              <div className="font-medium">Итого ориентировочно: ₽{fmtRub(testChinaBatch.fullUnitCostRub)} за шт</div>
+            </div>
           )}
         </div>
       </div>
@@ -446,7 +445,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-4">
-          <button 
+          <button
             className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
             onClick={() => {
               setTestQuantity(product.optQ);
@@ -455,7 +454,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           >
             💡 Применить оптимальное количество
           </button>
-          <button 
+          <button
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
             onClick={() => exportToCSV()}
           >
@@ -468,14 +467,14 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
       <div className="bg-white border rounded-lg p-4 mb-6">
         <div className="flex justify-between items-center mb-4">
           <h4 className="text-md font-semibold">Настройки прогнозирования (Monte Carlo)</h4>
-          <button 
+          <button
             onClick={() => setMonteCarloParams(prev => ({ ...prev, showAdvanced: !prev.showAdvanced }))}
             className="text-sm text-blue-600 hover:text-blue-800"
           >
             {monteCarloParams.showAdvanced ? 'Скрыть дополнительные' : 'Показать дополнительные'}
           </button>
         </div>
-        
+
         <div className="text-sm text-gray-600 mb-4">
           Модель симулирует тысячи сценариев спроса для расчета ожидаемых продаж и потерь.
         </div>
@@ -509,7 +508,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
               </button>
             </div>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Текущие настройки
@@ -541,8 +540,8 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             <LineChart data={chartData} margin={{ top: 20, right: 30, left: 40, bottom: 60 }}>
               <defs>
                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -561,53 +560,53 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
                 labelFormatter={(value) => `При заказе ${value} шт`}
                 contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', borderRadius: '8px' }}
               />
-              
+
               <ReferenceLine y={0} stroke="#ef4444" strokeWidth={2} strokeDasharray="2 2" />
-              
-              <ReferenceLine 
-                x={product.optQ} 
-                stroke="#f59e0b" 
+
+              <ReferenceLine
+                x={product.optQ}
+                stroke="#f59e0b"
                 strokeWidth={3}
                 strokeDasharray="8 4"
               >
-                <Label 
-                  value={`Оптимум: ${fmt(product.optQ)} шт`} 
-                  position="top" 
-                  offset={15} 
-                  style={{ 
-                    fontSize: 14, 
-                    fill: '#f59e0b', 
+                <Label
+                  value={`Оптимум: ${fmt(product.optQ)} шт`}
+                  position="top"
+                  offset={15}
+                  style={{
+                    fontSize: 14,
+                    fill: '#f59e0b',
                     fontWeight: 'bold',
                     backgroundColor: 'rgba(255, 255, 255, 0.9)',
                     padding: '4px 8px',
                     borderRadius: '4px'
-                  }} 
+                  }}
                 />
               </ReferenceLine>
-              
-              <ReferenceLine 
-                x={product.safety} 
-                stroke="#3b82f6" 
+
+              <ReferenceLine
+                x={product.safety}
+                stroke="#3b82f6"
                 strokeWidth={2}
                 strokeDasharray="4 4"
               >
-                <Label 
-                  value={`Мин. запас: ${fmt(product.safety)} шт`} 
-                  position="bottom" 
-                  offset={15} 
-                  style={{ 
-                    fontSize: 12, 
+                <Label
+                  value={`Мин. запас: ${fmt(product.safety)} шт`}
+                  position="bottom"
+                  offset={15}
+                  style={{
+                    fontSize: 12,
                     fill: '#3b82f6',
                     fontWeight: 'bold',
                     backgroundColor: 'rgba(255, 255, 255, 0.8)'
-                  }} 
+                  }}
                 />
               </ReferenceLine>
-              
-              <Line 
-                type="monotone" 
-                dataKey="value" 
-                stroke="#10b981" 
+
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="#10b981"
                 strokeWidth={2}
                 fill="url(#colorValue)"
                 activeDot={{ r: 6, fill: '#10b981' }}
@@ -617,7 +616,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             </LineChart>
           </ResponsiveContainer>
         </div>
-        
+
         {/* Легенда */}
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex items-center space-x-3 p-3 bg-orange-50 rounded-lg">
@@ -655,11 +654,10 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             {['Я', 'Ф', 'М', 'А', 'М', 'И', 'И', 'А', 'С', 'О', 'Н', 'Д'].map((month, index) => (
               <div key={index} className="text-center">
                 <div className="text-xs text-gray-600 mb-1">{month}</div>
-                <div 
-                  className={`relative bg-purple-200 rounded-t transition-all duration-300 ${
-                    index === product.seasonality!.currentMonth ? 'ring-2 ring-purple-600' : ''
-                  }`}
-                  style={{ 
+                <div
+                  className={`relative bg-purple-200 rounded-t transition-all duration-300 ${index === product.seasonality!.currentMonth ? 'ring-2 ring-purple-600' : ''
+                    }`}
+                  style={{
                     height: `${Math.max(20, product.seasonality!.monthlyFactors[index] * 60)}px`,
                     backgroundColor: index === product.seasonality!.currentMonth ? '#7c3aed' : '#ddd6fe'
                   }}

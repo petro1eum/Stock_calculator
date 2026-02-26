@@ -158,7 +158,7 @@ const RiskPanel: React.FC<RiskPanelProps> = ({ products, confidence = 0.95, look
         const est = estimateWeeklyRevenueFromProducts(products, s.muWeekMultiplier, s.sigmaWeekMultiplier);
         return { mean: est.mean, std: est.std, weight: s.probability };
       });
-      const { var: VaR, es: ES, mixtureMean, quantile } = mixtureVaR_ES(states, confidence);
+      const { var: VaR, es: ES, mixtureMean } = mixtureVaR_ES(states, confidence);
       // Аппроксимация эфф. σ из смеси: по центральной дисперсии
       const mixVar = states.reduce((acc, st) => acc + st.weight * ((st.std ** 2) + (st.mean - mixtureMean) ** 2), 0);
       return { mu: mixtureMean, sigma: Math.sqrt(Math.max(0, mixVar)), VaR, ES };

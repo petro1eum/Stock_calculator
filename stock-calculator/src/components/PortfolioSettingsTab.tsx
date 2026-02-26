@@ -13,7 +13,7 @@ const PortfolioSettingsTab: React.FC = () => {
     correlationRules,
     setCorrelationRules
   } = usePortfolioSettings();
-  
+
   const [newCurrency, setNewCurrency] = useState<Currency>({ code: '', rate: 1, volatility: 0.15 });
   const [editingCurrency, setEditingCurrency] = useState<string | null>(null);
 
@@ -93,11 +93,7 @@ const PortfolioSettingsTab: React.FC = () => {
     }
   };
 
-  const updateRule = (index: number, updatedRule: CorrelationRule) => {
-    const newRules = [...correlationRules];
-    newRules[index] = updatedRule;
-    setCorrelationRules(newRules);
-  };
+
 
   const deleteRule = (index: number) => {
     if (window.confirm('Удалить правило?')) {
@@ -110,7 +106,7 @@ const PortfolioSettingsTab: React.FC = () => {
       {/* Управление валютами */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold mb-4">Управление валютами</h3>
-        
+
         {/* Форма добавления */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <input
@@ -236,7 +232,7 @@ const PortfolioSettingsTab: React.FC = () => {
       {/* Управление поставщиками */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold mb-4">Управление поставщиками</h3>
-        
+
         {/* Форма добавления */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <input
@@ -360,7 +356,7 @@ const PortfolioSettingsTab: React.FC = () => {
       {/* Управление категориями */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold mb-4">Управление категориями товаров</h3>
-        
+
         {/* Форма добавления */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <input
@@ -488,7 +484,7 @@ const PortfolioSettingsTab: React.FC = () => {
       {/* Управление правилами корреляции */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold mb-4">Правила корреляции товаров</h3>
-        
+
         {/* Форма добавления */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
           <select
@@ -547,14 +543,13 @@ const PortfolioSettingsTab: React.FC = () => {
               {correlationRules.map((rule, index) => (
                 <tr key={index}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      rule.type === 'complement' ? 'bg-green-100 text-green-800' :
-                      rule.type === 'substitute' ? 'bg-red-100 text-red-800' :
-                      'bg-blue-100 text-blue-800'
-                    }`}>
+                    <span className={`px-2 py-1 text-xs rounded-full ${rule.type === 'complement' ? 'bg-green-100 text-green-800' :
+                        rule.type === 'substitute' ? 'bg-red-100 text-red-800' :
+                          'bg-blue-100 text-blue-800'
+                      }`}>
                       {rule.type === 'complement' ? 'Комплементы' :
-                       rule.type === 'substitute' ? 'Субституты' :
-                       'Сезонные'}
+                        rule.type === 'substitute' ? 'Субституты' :
+                          'Сезонные'}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

@@ -37,15 +37,13 @@ const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({ product, onCl
   const [priceCards, setPriceCards] = React.useState<any[]>([]);
   const [wbCard, setWbCard] = React.useState<{ vendorCode?: string; objectName?: string; stocksWb?: number } | null>(null);
   const [lifetime, setLifetime] = React.useState<{ units: number; revenue: number }>({ units: 0, revenue: 0 });
-  const [warehousesDict, setWarehousesDict] = React.useState<Record<string, string>>({});
+
   const [costForm, setCostForm] = React.useState<{ purchase_amount?: number | null; purchase_currency?: string; logistics_amount?: number | null; logistics_currency?: string; fx_rate?: number | null }>({ purchase_amount: null, purchase_currency: 'CNY', logistics_amount: null, logistics_currency: 'USD', fx_rate: null });
   const [costStatus, setCostStatus] = React.useState<string | null>(null);
 
   const skuStr = product ? String(product.sku) : '';
 
-  // Helpers
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const isoDateParam = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T00:00:00`;
+
   const toIsoDateOrNull = (value: unknown): string | null => {
     try {
       if (typeof value === 'string') {

@@ -1,4 +1,4 @@
-import { Product, MonteCarloParams } from '../types';
+import { Product } from '../types';
 import {
   NormalizedProduct,
   Currency,
@@ -8,8 +8,8 @@ import {
   EfficientFrontierPoint,
   DeliverySchedule
 } from '../types/portfolio';
-import { inverseNormal, blackScholesCall } from './mathFunctions';
-import { getEffectivePurchasePrice, optimizeQuantity, strictBSMixtureOptionValue } from './inventoryCalculations';
+import { blackScholesCall } from './mathFunctions';
+import { optimizeQuantity, strictBSMixtureOptionValue } from './inventoryCalculations';
 
 // Валюты и их волатильности (базовые значения)
 const CURRENCIES: Map<string, Currency> = new Map([
@@ -30,7 +30,7 @@ const LOGISTICS_VOLATILITY: Map<string, number> = new Map([
 export class PortfolioOptimizer {
   private baseCurrency = 'RUB';
   private baseTimeUnit = 'weeks';
-  
+
   constructor(
     private products: Product[],
     private constraints: PortfolioConstraints,
@@ -44,7 +44,7 @@ export class PortfolioOptimizer {
     private probStatesCorrById?: Map<number, Map<number, number>>,
     // Опционально: сценарии для строгого Black‑Scholes
     private bsScenarios?: Array<{ probability: number; muWeekMultiplier: number; sigmaWeekMultiplier: number }>
-  ) {}
+  ) { }
 
   // Построение недельных рядов выручки (₽) для каждого товара, для оценки ковариаций
   private buildWeeklyRevenueSeries(lookbackWeeks: number = 26): Map<number, number[]> {
@@ -73,22 +73,22 @@ export class PortfolioOptimizer {
     }
     return series;
   }
-  
+
   // Нормализация продукта к единой базе
   normalizeProduct(product: Product): NormalizedProduct {
     const currency = product.currency || 'RUB';
     const exchangeRate = this.getExchangeRate(currency);
-    
+
     // Конвертируем в рубли
     const S = product.muWeek * (product.purchase + product.margin) * this.weeks * exchangeRate;
     const K = product.purchase * exchangeRate;
-    
+
     // Приводим время к неделям
     const T = this.weeks / 52;
-    
+
     // Комбинированная волатильность
     const sigma = this.calculateCombinedVolatility(product);
-    
+
     return {
       id: product.id,
       name: product.name,
@@ -103,28 +103,28 @@ export class PortfolioOptimizer {
       originalProduct: product
     };
   }
-  
+
   private getExchangeRate(currency: string): number {
     return CURRENCIES.get(currency)?.rate || 1.0;
   }
-  
+
   private getCurrencyVolatility(currency: string): number {
     return CURRENCIES.get(currency)?.volatility || 0.15;
   }
-  
+
   private getLogisticsVolatility(supplier: string): number {
     return LOGISTICS_VOLATILITY.get(supplier) || 0.15;
   }
-  
+
   private calculateCombinedVolatility(product: Product): number {
     const demandVol = product.sigmaWeek / product.muWeek; // CV спроса
     const currencyVol = this.getCurrencyVolatility(product.currency || 'RUB');
     const logisticsVol = this.getLogisticsVolatility(product.supplier || 'domestic');
-    
+
     // Простое правило: корень из суммы квадратов
-    return Math.sqrt(demandVol**2 + currencyVol**2 + logisticsVol**2);
+    return Math.sqrt(demandVol ** 2 + currencyVol ** 2 + logisticsVol ** 2);
   }
-  
+
   // Основная функция оптимизации
   optimize(): PortfolioAllocation {
     // 1. Нормализуем все продукты (для стоимости/объема); строгую ценность считаем по смеси сценариев
@@ -167,22 +167,22 @@ export class PortfolioOptimizer {
         return { ...np, score, bestQ, bestValue } as any;
       })
       .sort((a: any, b: any) => b.score - a.score);
-    
+
     // 4. Жадно заполняем портфель
     const allocation = new Map<number, number>();
     let remainingBudget = this.constraints.totalBudget;
     let remainingSpace = this.constraints.warehouseCapacity;
-    
+
     const maxShare = this.constraints.maxSkuShare && this.constraints.maxSkuShare > 0 && this.constraints.maxSkuShare <= 1
       ? this.constraints.maxSkuShare
       : 0.5; // по умолчанию не больше 50% бюджета в один SKU
 
     const minKinds = Math.max(0, this.constraints.minDistinctSkus || 0);
-    let kindsChosen = 0;
+
 
     for (const product of rankedProducts as any[]) {
       const originalProduct = product.originalProduct;
-      
+
       // Бюджетные и складские ограничения
       const perSkuBudgetCap = (this.constraints.totalBudget * maxShare);
       const remainingPerSku = perSkuBudgetCap;
@@ -190,7 +190,7 @@ export class PortfolioOptimizer {
       const maxByBudget = Math.floor(Math.min(remainingBudget, remainingPerSku) / unitCostApprox);
       const maxBySpace = Math.floor(remainingSpace / (product.volume || 1));
       const maxByConstraints = Math.min(maxByBudget, maxBySpace);
-      
+
       const minQty = originalProduct.minOrderQty || 0;
       const maxQty = isFinite(originalProduct.maxStorageQty || NaN) ? (originalProduct.maxStorageQty as number) : Infinity;
       const upperBound = Math.max(0, Math.min(maxByConstraints, isFinite(maxQty) ? maxQty : maxByConstraints));
@@ -198,24 +198,22 @@ export class PortfolioOptimizer {
       // Используем уже рассчитанный bestQ из ранжирования, но ограничиваем текущими бюджетными лимитами
       const estimatedBestQ = Math.max(0, product.bestQ || 0);
       const optimalQty = Math.min(upperBound, Math.max(minQty, estimatedBestQ));
-      
+
       if (optimalQty > 0) {
         allocation.set(product.id, optimalQty);
         remainingBudget -= optimalQty * unitCostApprox;
         remainingSpace -= optimalQty * (product.volume || 1);
-        kindsChosen += 1;
       }
     }
-    
+
     // 5. Применяем корреляционные правила
     const adjustedAllocation = this.applyCorrelationRules(allocation, normalizedProducts);
-    
+
     // 6. Проверяем, не превышаем ли бюджет после корреляционных правил
     const finalAllocation = this.enforceConstraints(adjustedAllocation, normalizedProducts);
 
     // Если выбрали меньше, чем требуется по minDistinctSkus, распределим минимальные объемы
     if (minKinds > 0 && Array.from(finalAllocation.keys()).length < minKinds) {
-      const need = minKinds - Array.from(finalAllocation.keys()).length;
       for (const np of rankedProducts) {
         if (Array.from(finalAllocation.keys()).includes(np.id)) continue;
         const canBuy = Math.floor((remainingBudget) / np.K);
@@ -225,11 +223,11 @@ export class PortfolioOptimizer {
         if (Array.from(finalAllocation.keys()).length >= minKinds) break;
       }
     }
-    
+
     // 7. Рассчитываем метрики портфеля
     return this.calculatePortfolioMetrics(finalAllocation, normalizedProducts);
   }
-  
+
   private calculateOptionValue(product: NormalizedProduct): number {
     const { optionValue } = blackScholesCall(
       product.S,
@@ -238,17 +236,17 @@ export class PortfolioOptimizer {
       product.sigma,
       this.r
     );
-    
+
     // Если опцион имеет нулевую стоимость, возвращаем хотя бы внутреннюю стоимость
     if (optionValue === 0 && product.S > product.K) {
       return product.S - product.K;
     }
-    
+
     return optionValue;
   }
-  
+
   private applyCorrelationRules(
-    allocation: Map<number, number>, 
+    allocation: Map<number, number>,
     products: NormalizedProduct[]
   ): Map<number, number> {
     const rules: CorrelationRule[] = [
@@ -261,19 +259,19 @@ export class PortfolioOptimizer {
       { type: 'seasonal', items: ['summer'], factor: 2.0, condition: 'summer' },
       { type: 'seasonal', items: ['winter'], factor: 2.0, condition: 'winter' }
     ];
-    
+
     const adjusted = new Map(allocation);
-    
+
     for (const rule of rules) {
       if (rule.type === 'complement') {
         // Проверяем наличие всех товаров из группы
-        const hasAll = rule.items.every(item => 
+        const hasAll = rule.items.every(item =>
           Array.from(allocation.keys()).some(id => {
             const product = products.find(p => p.id === id);
             return product?.name.toLowerCase().includes(item);
           })
         );
-        
+
         if (hasAll) {
           // Увеличиваем количество комплементов
           Array.from(adjusted.entries()).forEach(([id, qty]) => {
@@ -285,10 +283,10 @@ export class PortfolioOptimizer {
         }
       }
     }
-    
+
     return adjusted;
   }
-  
+
   private enforceConstraints(
     allocation: Map<number, number>,
     products: NormalizedProduct[]
@@ -296,21 +294,21 @@ export class PortfolioOptimizer {
     // Проверяем общие затраты
     let totalCost = 0;
     let totalVolume = 0;
-    
+
     Array.from(allocation.entries()).forEach(([id, qty]) => {
       const product = products.find(p => p.id === id);
       if (!product) return;
-      
+
       totalCost += qty * product.K;
       totalVolume += qty * (product.volume || 1);
     });
-    
+
     // Если превышаем бюджет или объем, пропорционально сокращаем
     if (totalCost > this.constraints.totalBudget || totalVolume > this.constraints.warehouseCapacity) {
       const budgetRatio = this.constraints.totalBudget / totalCost;
       const volumeRatio = this.constraints.warehouseCapacity / totalVolume;
       const scaleFactor = Math.min(budgetRatio, volumeRatio);
-      
+
       const scaledAllocation = new Map<number, number>();
       Array.from(allocation.entries()).forEach(([id, qty]) => {
         const scaledQty = Math.floor(qty * scaleFactor);
@@ -318,13 +316,13 @@ export class PortfolioOptimizer {
           scaledAllocation.set(id, scaledQty);
         }
       });
-      
+
       return scaledAllocation;
     }
-    
+
     return allocation;
   }
-  
+
   private calculatePortfolioMetrics(
     allocation: Map<number, number>,
     products: NormalizedProduct[]
@@ -333,14 +331,14 @@ export class PortfolioOptimizer {
     let expectedReturn = 0;
     const currencyExposure = new Map<string, number>();
     const supplierConcentration = new Map<string, number>();
-    
+
     Array.from(allocation.entries()).forEach(([id, qty]) => {
       const product = products.find(p => p.id === id);
       if (!product) return;
-      
+
       const investment = qty * product.K;
       totalInvestment += investment;
-      
+
       // Строгий BS: ценность для данного товара при количестве qty
       const p = product.originalProduct;
       const scenarios = (this.bsScenarios && this.bsScenarios.length > 0)
@@ -362,14 +360,14 @@ export class PortfolioOptimizer {
         this.monteCarloParams
       );
       expectedReturn += Math.max(0, value);
-      
+
       // Валютная экспозиция
       const currency = product.originalProduct.currency || 'RUB';
       currencyExposure.set(
-        currency, 
+        currency,
         (currencyExposure.get(currency) || 0) + investment
       );
-      
+
       // Концентрация поставщиков
       const supplier = product.supplier || 'domestic';
       supplierConcentration.set(
@@ -377,10 +375,10 @@ export class PortfolioOptimizer {
         (supplierConcentration.get(supplier) || 0) + investment
       );
     });
-    
+
     // Расчет риска портфеля (упрощенный)
     const portfolioRisk = this.calculatePortfolioRisk(allocation, products);
-    
+
     return {
       allocations: allocation,
       totalInvestment,
@@ -390,7 +388,7 @@ export class PortfolioOptimizer {
       supplierConcentration
     };
   }
-  
+
   private calculatePortfolioRisk(
     allocation: Map<number, number>,
     products: NormalizedProduct[]
@@ -398,7 +396,7 @@ export class PortfolioOptimizer {
     // Оценим риск портфеля как CV недельной выручки: std(Σ w_i*R_i) / mean(Σ w_i*R_i)
     const lookbackWeeks = 26;
     const seriesByProduct = this.buildWeeklyRevenueSeries(lookbackWeeks);
-    
+
     // Веса по инвестициям
     let totalInvestment = 0;
     const weightById = new Map<number, number>();
@@ -413,7 +411,7 @@ export class PortfolioOptimizer {
     Array.from(weightById.keys()).forEach(id => {
       weightById.set(id, (weightById.get(id)! / totalInvestment));
     });
-    
+
     // Если есть ProbStates корреляции — используем ковариационную формулу для std портфеля
     if (this.probStatesCorrById && this.probStatesCorrById.size > 0) {
       // Соберем μ_i и σ_i для каждого id
@@ -466,72 +464,72 @@ export class PortfolioOptimizer {
     const std = Math.sqrt(variance);
     return std / mean;
   }
-  
+
   // Построение эффективной границы
   buildEfficientFrontier(points: number = 20): EfficientFrontierPoint[] {
     const frontier: EfficientFrontierPoint[] = [];
-    
+
     // Минимальный и максимальный риск
     const minRisk = 0.1;
     const maxRisk = 0.5;
     const step = (maxRisk - minRisk) / points;
-    
+
     for (let risk = minRisk; risk <= maxRisk; risk += step) {
       // Для каждого уровня риска находим максимальную доходность
       const allocation = this.optimizeForRisk(risk);
-      
+
       frontier.push({
         risk,
         return: allocation.expectedReturn / allocation.totalInvestment,
         allocation: allocation.allocations
       });
     }
-    
+
     return frontier;
   }
-  
+
   private optimizeForRisk(targetRisk: number): PortfolioAllocation {
     // Упрощенная оптимизация для заданного уровня риска
     // В реальности здесь был бы более сложный алгоритм
     const baseAllocation = this.optimize();
-    
+
     // Корректируем аллокацию для достижения целевого риска
     const riskRatio = targetRisk / baseAllocation.portfolioRisk;
     const adjusted = new Map<number, number>();
-    
+
     Array.from(baseAllocation.allocations.entries()).forEach(([id, qty]) => {
       adjusted.set(id, Math.round(qty * riskRatio));
     });
-    
+
     return this.calculatePortfolioMetrics(
-      adjusted, 
+      adjusted,
       this.products.map(p => this.normalizeProduct(p))
     );
   }
-  
+
   // Создание календаря поставок
   createDeliverySchedule(allocation: Map<number, number>): DeliverySchedule[] {
     const schedule: Map<string, DeliverySchedule> = new Map();
-    
+
     Array.from(allocation.entries()).forEach(([id, qty]) => {
       const product = this.products.find(p => p.id === id);
       if (!product) return;
-      
+
       const arrivalDate = new Date();
       arrivalDate.setDate(arrivalDate.getDate() + this.weeks * 7);
-      
+
       // Округляем до начала недели
       const weekStart = new Date(arrivalDate);
       weekStart.setDate(weekStart.getDate() - weekStart.getDay());
       const weekKey = weekStart.toISOString().split('T')[0];
-      
+
       if (!schedule.has(weekKey)) {
         schedule.set(weekKey, {
           week: weekStart,
           orders: []
         });
       }
-      
+
       schedule.get(weekKey)!.orders.push({
         productId: id,
         quantity: qty,
@@ -539,8 +537,8 @@ export class PortfolioOptimizer {
         totalValue: qty * product.purchase * this.getExchangeRate(product.currency || 'RUB')
       });
     });
-    
-    return Array.from(schedule.values()).sort((a, b) => 
+
+    return Array.from(schedule.values()).sort((a, b) =>
       a.week.getTime() - b.week.getTime()
     );
   }

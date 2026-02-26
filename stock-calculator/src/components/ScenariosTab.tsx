@@ -40,7 +40,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   const [budgetInput, setBudgetInput] = useState<number>(1000000);
   const [showRecommendations, setShowRecommendations] = useState<boolean>(false);
   const [corrById, setCorrById] = useState<Map<number, Map<number, number>> | undefined>(undefined);
-  const [covLastUpdated, setCovLastUpdated] = useState<string | undefined>(undefined);
+
 
   // Состояние для портфельной оптимизации
   const [portfolioConstraints, setPortfolioConstraints] = useState<PortfolioConstraints>({
@@ -275,7 +275,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
         capital: optimal.totalInvestment - current.totalInvestment
       }
     };
-  }, [activeView, products, dynamicConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts]);
+  }, [activeView, products, dynamicConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts, corrById, scenarios]);
 
   const recommendations = useMemo(() => {
     if (!portfolioOptimization) return [] as Array<{ id: number; sku: string; name: string; qty: number; invest: number; value: number; share: number }>;
@@ -307,7 +307,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
       rows.push({ id: pid, sku: p.sku, name: p.name, qty: qty || 0, invest, value, share: invest / total });
     });
     return rows.sort((a, b) => b.invest - a.invest);
-  }, [portfolioOptimization, products]);
+  }, [portfolioOptimization, products, hold, mlForecasts, monteCarloParams, r, rushProb, rushSave, scenarios, useMLForecasts, weeks]);
 
   if (products.length === 0) {
     return (
@@ -328,8 +328,8 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
           <button
             onClick={() => setActiveView('scenarios')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeView === 'scenarios'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-blue-500 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
           >
             Сценарный анализ
@@ -337,8 +337,8 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
           <button
             onClick={() => setActiveView('portfolio')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeView === 'portfolio'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-blue-500 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
           >
             Портфельная оптимизация
@@ -471,8 +471,8 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 text-xs rounded-full ${result.scenario.name === 'Пессимистичный' ? 'bg-red-100 text-red-800' :
-                            result.scenario.name === 'Оптимистичный' ? 'bg-green-100 text-green-800' :
-                              'bg-blue-100 text-blue-800'
+                          result.scenario.name === 'Оптимистичный' ? 'bg-green-100 text-green-800' :
+                            'bg-blue-100 text-blue-800'
                           }`}>
                           {fmt(result.optQ)}
                         </span>
@@ -532,8 +532,8 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       <div className="flex-1 bg-gray-200 rounded-full h-6 relative">
                         <div
                           className={`h-full rounded-full ${result.scenario.name === 'Пессимистичный' ? 'bg-red-500' :
-                              result.scenario.name === 'Оптимистичный' ? 'bg-green-500' :
-                                'bg-blue-500'
+                            result.scenario.name === 'Оптимистичный' ? 'bg-green-500' :
+                              'bg-blue-500'
                             }`}
                           style={{ width: `${(result.optQ / Math.max(...scenarioResults.map(r => r.optQ))) * 100}%` }}
                         />
@@ -564,8 +564,8 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       <div className="flex-1 bg-gray-200 rounded-full h-6 relative">
                         <div
                           className={`h-full rounded-full ${result.scenario.name === 'Пессимистичный' ? 'bg-red-500' :
-                              result.scenario.name === 'Оптимистичный' ? 'bg-green-500' :
-                                'bg-blue-500'
+                            result.scenario.name === 'Оптимистичный' ? 'bg-green-500' :
+                              'bg-blue-500'
                             }`}
                           style={{ width: `${Math.max(0, (result.optValue / Math.max(...scenarioResults.map(r => r.optValue))) * 100)}%` }}
                         />

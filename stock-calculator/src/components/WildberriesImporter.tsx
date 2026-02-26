@@ -24,33 +24,6 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
   };
 
   const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-  const toIsoDateOrNull = (value: unknown): string | null => {
-    if (!value) return null;
-    try {
-      if (typeof value === 'string') {
-        // ожидаем либо YYYY-MM-DD, либо полноценный ISO
-        const onlyDate = value.split('T')[0];
-        if (/^\d{4}-\d{2}-\d{2}$/.test(onlyDate)) {
-          return `${onlyDate}T00:00:00Z`;
-        }
-        const d = new Date(value);
-        if (!isNaN(d.getTime())) return `${d.toISOString().split('T')[0]}T00:00:00Z`;
-        return null;
-      }
-      if (value instanceof Date && !isNaN(value.getTime())) {
-        return `${value.toISOString().split('T')[0]}T00:00:00Z`;
-      }
-      return null;
-    } catch { return null; }
-  };
-  const toInt = (v: any, def = 0): number => {
-    const n = Number(v);
-    return Number.isFinite(n) ? Math.trunc(n) : def;
-  };
-  const toNumOrNull = (v: any): number | null => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  };
 
   const makeCacheKey = (url: string) => `wb_cache:${url}`;
   const readCache = (url: string) => {
