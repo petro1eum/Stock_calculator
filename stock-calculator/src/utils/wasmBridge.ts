@@ -10,6 +10,7 @@ export interface StockMathWasm {
     getOptimalQ: (margin: number, price: number, mu: number, sigma: number, weeks: number) => number;
     getNormalCDF: (x: number) => number;
     getNormalPDF: (x: number) => number;
+    evaluateScenarioBS: (q: number, mean: number, std: number, fullPrice: number, rushUnitRevenue: number, rushProb: number, trials: number, seed: number, K: number, T: number, r: number) => number;
 }
 
 // Глобальная ссылка на модуль, который загружается один раз
@@ -68,6 +69,9 @@ const bindWasmMethods = (mod: any) => {
     mod.getOptimalQ = mod.cwrap('getOptimalQ', 'number', ['number', 'number', 'number', 'number', 'number']);
     mod.getNormalCDF = mod.cwrap('getNormalCDF', 'number', ['number']);
     mod.getNormalPDF = mod.cwrap('getNormalPDF', 'number', ['number']);
+    mod.evaluateScenarioBS = mod.cwrap('evaluateScenarioBS_wasm', 'number',
+        ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']
+    );
 };
 
 export const runWasmMonteCarlo = async (q: number, muWeek: number, sigmaWeek: number, weeks: number, iterations: number): Promise<number> => {

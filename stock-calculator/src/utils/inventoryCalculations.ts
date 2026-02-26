@@ -518,6 +518,24 @@ export const strictBSMixtureOptionValue = (
     if (typeof it === 'number' && isFinite(it) && it > 0) return Math.min(2000, Math.max(300, Math.floor(it)));
     return 1000;
   })();
+
+  // Wasm Fast Path
+  const wasm = getCachedWasmModule();
+  if (wasm && typeof wasm.evaluateScenarioBS === 'function') {
+    let totalWasm = 0;
+    for (const s of scenarios) {
+      const muW = Math.max(0, baseMuWeek * (s.muWeekMultiplier || 1));
+      const sigmaW = Math.max(0, baseSigmaWeek * (s.sigmaWeekMultiplier || 1));
+      const mean = muW * weeks;
+      const std = sigmaW * Math.sqrt(weeks);
+      const seed = (monteCarloParams?.randomSeed ?? 1234567) + Math.floor(muW * 1000);
+
+      const bsVal = wasm.evaluateScenarioBS(q, mean, std, fullPrice, rushUnitRevenue, rushProb, trialsBase, seed, K, T, r);
+      totalWasm += (s.probability || 0) * bsVal;
+    }
+    return totalWasm;
+  }
+
   let total = 0;
 
   for (const s of scenarios) {

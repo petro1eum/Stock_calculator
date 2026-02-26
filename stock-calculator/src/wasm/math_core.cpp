@@ -88,4 +88,44 @@ extern "C" {
         }
     }
 
+    double blackScholesCall_cpp(double S, double K, double T, double sigma, double r) {
+        if (T <= 0) return std::max(0.0, S - K);
+        double d1 = (std::log(S / K) + (r + (sigma * sigma) / 2.0) * T) / (sigma * std::sqrt(T));
+        double d2 = d1 - sigma * std::sqrt(T);
+        return S * normalCDF_cpp(d1) - K * std::exp(-r * T) * normalCDF_cpp(d2);
+    }
+
+    double evaluateScenarioBS(
+        double q, double mean, double std_dev, double fullPrice, double rushUnitRevenue, 
+        double rushProb, int trials, int seed, double K, double T, double r
+    ) {
+        if (trials <= 0) return 0.0;
+        
+        std::mt19937 gen(seed);
+        std::normal_distribution<double> d(mean, std_dev);
+        
+        double sum = 0.0;
+        double sumsq = 0.0;
+        
+        for (int i = 0; i < trials; ++i) {
+            double demand = std::round(d(gen));
+            if (demand < 0.0) demand = 0.0;
+            
+            double normalSales = std::min(q, demand);
+            double lost = std::max(0.0, demand - q);
+            double rushSales = lost * rushProb;
+            double rev = normalSales * fullPrice + rushSales * rushUnitRevenue;
+            
+            sum += rev;
+            sumsq += rev * rev;
+        }
+        
+        double muRev = sum / static_cast<double>(trials);
+        double varRev = std::max(0.0, sumsq / static_cast<double>(trials) - muRev * muRev);
+        double sigmaRev = std::sqrt(varRev);
+        double sigmaBS = muRev > 0 ? std::sqrt(std::log(1.0 + (sigmaRev / muRev) * (sigmaRev / muRev))) : 0.2;
+        
+        return blackScholesCall_cpp(std::max(muRev, 1e-6), std::max(K, 1e-6), T, std::max(sigmaBS, 1e-6), r);
+    }
+
 }
