@@ -53,8 +53,8 @@ describe('Inventory Calculator Mathematical Functions', () => {
         q, muWeek, sigmaWeek, weeks, purchase, margin, rushProb, rushSave, 1000
       );
       
-      // Expected: 50 * 15 (normal) + 50 * 15 (rush) = 1500
-      expect(revenue).toBeCloseTo(1500, 0);
+      // Expected: 50 * 15 (normal) + 50 * (15 - 3) (rush) = 1350
+      expect(revenue).toBeCloseTo(1350, 0);
     });
   });
   
@@ -179,36 +179,6 @@ describe('Inventory Calculator Mathematical Functions', () => {
       
       expect(metrics.excessInventory).toBe(100); // 200 - 100
       expect(metrics.metrics.riskLevel).toBe(0.5); // 100/200
-    });
-  });
-});
-
-// Тесты для основных математических функций из оригинального файла
-describe('Core Mathematical Functions', () => {
-  
-  describe('Normal Distribution CDF', () => {
-    it('should return 0.5 for x=0', () => {
-      // Для стандартного нормального распределения CDF(0) = 0.5
-      // Нужно будет экспортировать функцию cdf для тестирования
-      expect(true).toBe(true); // Placeholder
-    });
-  });
-  
-  describe('Inverse Normal Distribution', () => {
-    it('should return correct z-scores for common probabilities', () => {
-      // invNorm(0.95) ≈ 1.645
-      // invNorm(0.99) ≈ 2.326
-      // Нужно будет экспортировать функцию invNorm для тестирования
-      expect(true).toBe(true); // Placeholder
-    });
-  });
-  
-  describe('Black-Scholes Option Pricing', () => {
-    it('should handle edge cases correctly', () => {
-      // При T=0 опцион = max(0, S-K)
-      // При очень низкой волатильности результат приближается к внутренней стоимости
-      // Нужно будет экспортировать функцию blackScholes для тестирования
-      expect(true).toBe(true); // Placeholder
     });
   });
 }); 

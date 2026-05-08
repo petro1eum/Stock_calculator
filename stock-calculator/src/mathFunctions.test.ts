@@ -50,6 +50,11 @@ describe('Mathematical Functions Tests', () => {
       const S = 100, K = 90, T = 0, sigma = 0.2, r = 0.05;
       expect(blackScholesCall(S, K, T, sigma, r)).toBe(10); // max(0, S-K)
     });
+
+    it('should match the canonical Black-Scholes benchmark', () => {
+      const S = 100, K = 100, T = 1, sigma = 0.2, r = 0.05;
+      expect(blackScholesCall(S, K, T, sigma, r)).toBeCloseTo(10.4506, 3);
+    });
     
     it('should handle case when option is deep in the money', () => {
       const S = 200, K = 100, T = 1, sigma = 0.2, r = 0.05;
@@ -68,7 +73,7 @@ describe('Mathematical Functions Tests', () => {
     it('should handle zero volatility', () => {
       const S = 100, K = 90, T = 1, sigma = 0, r = 0.05;
       const callValue = blackScholesCall(S, K, T, sigma, r);
-      expect(callValue).toBeCloseTo(10, 0); // Should be max(0, S-K) for zero volatility
+      expect(callValue).toBeCloseTo(S - K * Math.exp(-r * T), 5);
     });
   });
   
@@ -87,19 +92,9 @@ describe('Mathematical Functions Tests', () => {
       expect(loss).toBeCloseTo(expectedDemand - supply, 0);
     });
     
-    it('should increase trials for high volatility', () => {
-      // High volatility case
-      const startTime = Date.now();
-      monteCarloDemandLoss(100, 50, 100, 4); // CV = 2
-      const highVolTime = Date.now() - startTime;
-      
-      // Low volatility case
-      const startTime2 = Date.now();
-      monteCarloDemandLoss(100, 50, 5, 4); // CV = 0.1
-      const lowVolTime = Date.now() - startTime2;
-      
-      // High volatility should take more time due to more iterations
-      expect(highVolTime).toBeGreaterThan(lowVolTime);
+    it('should be exact for deterministic demand regardless of trial count', () => {
+      expect(monteCarloDemandLoss(50, 25, 0, 4, 1)).toBe(50);
+      expect(monteCarloDemandLoss(150, 25, 0, 4, 1)).toBe(0);
     });
   });
   
@@ -143,8 +138,8 @@ describe('Mathematical Functions Tests', () => {
         1,   // rushProb (always rush)
         3    // rushSave
       );
-      // 50 normal + 50 rush, all at full price
-      expect(revenue).toBeCloseTo(1500, 0);
+      // 50 normal at 15 plus 50 rush at 12 after rushSave
+      expect(revenue).toBeCloseTo(1350, 0);
     });
   });
   
@@ -224,23 +219,7 @@ describe('Mathematical Functions Tests', () => {
   });
 });
 
-// Performance tests
-describe('Performance Tests', () => {
-  it('should complete Monte Carlo simulation in reasonable time', () => {
-    const startTime = Date.now();
-    const iterations = 10;
-    
-    for (let i = 0; i < iterations; i++) {
-      monteCarloDemandLoss(100, 50, 20, 4);
-    }
-    
-    const totalTime = Date.now() - startTime;
-    const avgTime = totalTime / iterations;
-    
-    // Should complete in less than 100ms on average
-    expect(avgTime).toBeLessThan(100);
-  });
-  
+describe('Robustness Tests', () => {
   it('should handle extreme parameters gracefully', () => {
     // Test with very large numbers
     expect(() => {

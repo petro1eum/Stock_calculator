@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
+import { apiUrl } from '../utils/apiClient';
 import { Product, Scenario } from '../types';
-import { PortfolioConstraints, PortfolioAllocation } from '../types/portfolio';
+import { PortfolioConstraints } from '../types/portfolio';
 import { formatNumber } from '../utils/mathFunctions';
-import { inverseNormal, blackScholesCall } from '../utils/mathFunctions';
-import { calculateExpectedRevenue, calculateVolatility, mcDemandLoss, getEffectivePurchasePrice, optimizeQuantity, strictBSMixtureOptionValue } from '../utils/inventoryCalculations';
+import { strictBSMixtureOptionValue } from '../utils/inventoryCalculations';
+import { buildDecisionContext, optimizeInventoryDecision, scenarioToAdjustment } from '../utils/inventoryDecision';
 import { PortfolioOptimizer } from '../utils/portfolioOptimization';
+import { usePortfolioSettings } from '../contexts/PortfolioSettingsContext';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Scatter, ScatterChart } from 'recharts';
 
 
@@ -37,9 +39,11 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   const [activeView, setActiveView] = useState<'scenarios' | 'portfolio'>('scenarios');
   const [useMLForecasts, setUseMLForecasts] = useState(false);
   const [mlForecasts, setMlForecasts] = useState<Record<string, { mu: number; sigma: number }>>({});
+  const [mlForecastNotice, setMlForecastNotice] = useState<string | null>(null);
   const [budgetInput, setBudgetInput] = useState<number>(1000000);
   const [showRecommendations, setShowRecommendations] = useState<boolean>(false);
   const [corrById, setCorrById] = useState<Map<number, Map<number, number>> | undefined>(undefined);
+  const portfolioSettings = usePortfolioSettings();
 
 
   // Состояние для портфельной оптимизации
@@ -54,6 +58,16 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
   });
 
   const fmt = formatNumber;
+  const decisionContext = useMemo(() => buildDecisionContext({
+    weeks,
+    hold,
+    r,
+    rushProb,
+    rushSave,
+    csl,
+    maxUnits,
+    monteCarloParams
+  }), [weeks, hold, r, rushProb, rushSave, csl, maxUnits, monteCarloParams]);
 
   const product = products.find(p => p.id === selectedProduct);
 
@@ -120,23 +134,32 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
 
   // Загрузка ML прогнозов
   React.useEffect(() => {
-    if (!useMLForecasts) return;
+    if (!useMLForecasts) {
+      setMlForecastNotice(null);
+      return;
+    }
 
     const loadForecasts = async () => {
       try {
-        const resp = await fetch('/api/forecasts');
+        const resp = await fetch(apiUrl('/api/forecasts'));
         if (!resp.ok) throw new Error(await resp.text());
         const json = await resp.json();
         setMlForecasts(json.forecasts || {});
-      } catch (error) {
-        console.error('Failed to load ML forecasts:', error);
+        if (json.source === 'disabled' && typeof json.message === 'string') {
+          setMlForecastNotice(json.message);
+        } else {
+          setMlForecastNotice(null);
+        }
+      } catch {
+        setMlForecasts({});
+        setMlForecastNotice('Не удалось загрузить прогнозы; используются исторические значения.');
       }
     };
 
     loadForecasts();
   }, [useMLForecasts]);
 
-  // Загрузка корреляций (ProbStates) из Supabase, если доступны
+  // Корреляции: по умолчанию единичная матрица (без удалённой загрузки probstates)
   React.useEffect(() => {
     // по умолчанию не фетчим ничего — ставим единичную, чтобы не блокировать UI на входе
     const ids = products.map(p => p.id);
@@ -154,52 +177,21 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
     if (!product) return [];
 
     return scenarios.map(scenario => {
-      // Используем ML прогнозы если доступны
-      let adjustedMuWeek = product.muWeek;
-      let adjustedSigmaWeek = product.sigmaWeek;
-
-      if (useMLForecasts && mlForecasts[product.sku]) {
-        adjustedMuWeek = mlForecasts[product.sku].mu;
-        adjustedSigmaWeek = mlForecasts[product.sku].sigma;
-      }
-
-      adjustedMuWeek *= scenario.muWeekMultiplier;
-      adjustedSigmaWeek *= scenario.sigmaWeekMultiplier;
-
-      // Пересчитываем оптимальные параметры для сценария
-      const step = Math.max(1, Math.round(adjustedMuWeek / 10));
-
-      const minQ = product.minOrderQty || 0;
-      const maxQ = product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits;
-
-      const evaluateQ = (q: number) => {
-        const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
-        const S = calculateExpectedRevenue(
-          q, adjustedMuWeek, adjustedSigmaWeek, weeks,
-          effectivePurchase, product.margin, rushProb, rushSave,
-          mcDemandLoss, monteCarloParams
-        );
-        const K = q * effectivePurchase * (1 + r * weeks / 52) + q * hold * weeks;
-        const T = weeks / 52;
-        const sigma = calculateVolatility(adjustedMuWeek, adjustedSigmaWeek, weeks, q, rushProb, product.currency, product.supplier);
-        const { optionValue } = blackScholesCall(S, K, T, sigma, r);
-        return optionValue;
-      };
-      const { bestQ, bestValue: bestNet } = optimizeQuantity(minQ, maxQ, step, evaluateQ);
-
-      const z = inverseNormal(csl);
-      const safety = Math.ceil(z * adjustedSigmaWeek * Math.sqrt(weeks));
+      const forecastProduct = useMLForecasts && mlForecasts[product.sku]
+        ? { ...product, muWeek: mlForecasts[product.sku].mu, sigmaWeek: mlForecasts[product.sku].sigma }
+        : product;
+      const decision = optimizeInventoryDecision(forecastProduct, decisionContext, scenarioToAdjustment(scenario));
 
       return {
         scenario,
-        optQ: bestQ,
-        optValue: bestNet,
-        safety,
-        expectedDemand: adjustedMuWeek * weeks,
-        demandStd: adjustedSigmaWeek * Math.sqrt(weeks)
+        optQ: decision.orderQty,
+        optValue: decision.optionValue,
+        safety: decision.safetyStock,
+        expectedDemand: decision.planningDemand.expectedDemand,
+        demandStd: decision.planningDemand.demandStd
       };
     });
-  }, [product, scenarios, maxUnits, rushProb, rushSave, hold, r, weeks, csl, monteCarloParams, useMLForecasts, mlForecasts]);
+  }, [product, scenarios, decisionContext, useMLForecasts, mlForecasts]);
 
   // Взвешенные оптимальные параметры
   const weightedOptimal = useMemo(() => {
@@ -246,22 +238,22 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
       weeks,
       monteCarloParams,
       corrById,
-      scenarios.map(s => ({ probability: s.probability, muWeekMultiplier: s.muWeekMultiplier, sigmaWeekMultiplier: s.sigmaWeekMultiplier })) as any
+      scenarios.map(s => ({ probability: s.probability, muWeekMultiplier: s.muWeekMultiplier, sigmaWeekMultiplier: s.sigmaWeekMultiplier })) as any,
+      portfolioSettings.currencies,
+      portfolioSettings.suppliers
     );
 
     const optimal = optimizer.optimize();
     const frontier = optimizer.buildEfficientFrontier(15);
     const schedule = optimizer.createDeliverySchedule(optimal.allocations);
 
-    // Текущее состояние (просто сумма оптимальных количеств)
-    const current: PortfolioAllocation = {
-      allocations: new Map(products.map(p => [p.id, p.optQ || 0])),
-      totalInvestment: products.reduce((sum, p) => sum + (p.optQ || 0) * p.purchase, 0),
-      expectedReturn: products.reduce((sum, p) => sum + (p.optValue || 0), 0),
-      portfolioRisk: 0.3, // примерное значение
-      currencyExposure: new Map([['RUB', products.reduce((sum, p) => sum + (p.optQ || 0) * p.purchase, 0)]]),
-      supplierConcentration: new Map([['domestic', 1.0]])
-    };
+    const current = optimizer.evaluateAllocation(new Map(products.map(p => [p.id, p.optQ || 0])));
+    const currentRoi = current.totalInvestment > 0
+      ? (current.expectedReturn - current.totalInvestment) / current.totalInvestment
+      : 0;
+    const optimalRoi = optimal.totalInvestment > 0
+      ? (optimal.expectedReturn - optimal.totalInvestment) / optimal.totalInvestment
+      : 0;
 
     return {
       current,
@@ -269,13 +261,12 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
       frontier,
       schedule,
       improvement: {
-        roi: ((optimal.expectedReturn - optimal.totalInvestment) / optimal.totalInvestment -
-          (current.expectedReturn - current.totalInvestment) / current.totalInvestment) * 100,
-        risk: (optimal.portfolioRisk - current.portfolioRisk) / current.portfolioRisk * 100,
+        roi: (optimalRoi - currentRoi) * 100,
+        risk: current.portfolioRisk > 0 ? (optimal.portfolioRisk - current.portfolioRisk) / current.portfolioRisk * 100 : 0,
         capital: optimal.totalInvestment - current.totalInvestment
       }
     };
-  }, [activeView, products, dynamicConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts, corrById, scenarios]);
+  }, [activeView, products, dynamicConstraints, rushProb, rushSave, hold, r, weeks, monteCarloParams, useMLForecasts, mlForecasts, corrById, scenarios, portfolioSettings.currencies, portfolioSettings.suppliers]);
 
   const recommendations = useMemo(() => {
     if (!portfolioOptimization) return [] as Array<{ id: number; sku: string; name: string; qty: number; invest: number; value: number; share: number }>;
@@ -362,6 +353,9 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                   </p>
                 </div>
                 <button
+                  type="button"
+                  data-testid="forecast-source-toggle"
+                  aria-label="Переключить источник прогнозов ML"
                   onClick={() => setUseMLForecasts(!useMLForecasts)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useMLForecasts ? 'bg-blue-600' : 'bg-gray-200'
                     }`}
@@ -375,6 +369,11 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
               {useMLForecasts && Object.keys(mlForecasts).length > 0 && (
                 <p className="text-xs text-green-600 mt-2">
                   ✓ Загружено {Object.keys(mlForecasts).length} прогнозов
+                </p>
+              )}
+              {useMLForecasts && mlForecastNotice && (
+                <p data-testid="forecast-disabled-notice" className="text-xs text-amber-700 mt-2 border border-amber-200 bg-amber-50 rounded p-2">
+                  {mlForecastNotice}
                 </p>
               )}
             </div>
@@ -482,7 +481,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className={result.optValue > 0 ? 'text-green-600' : 'text-red-600'}>
-                          ${fmt(result.optValue)}
+                          ₽{fmt(result.optValue)}
                         </span>
                       </td>
                     </tr>
@@ -490,7 +489,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                   {/* Взвешенный результат */}
                   <tr className="bg-blue-50 font-semibold">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-900">
-                      Взвешенный оптимум
+                      Ожидаемый по сценариям оптимум
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-900">
                       100%
@@ -510,7 +509,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       {fmt(weightedOptimal.safety)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-900">
-                      ${fmt(weightedOptimal.optValue)}
+                      ₽{fmt(weightedOptimal.optValue)}
                     </td>
                   </tr>
                 </tbody>
@@ -570,7 +569,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                           style={{ width: `${Math.max(0, (result.optValue / Math.max(...scenarioResults.map(r => r.optValue))) * 100)}%` }}
                         />
                       </div>
-                      <span className="w-20 text-sm text-right">${fmt(result.optValue)}</span>
+                      <span className="w-20 text-sm text-right">₽{fmt(result.optValue)}</span>
                     </div>
                   ))}
                 </div>
@@ -585,10 +584,10 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
               <div className="p-4 bg-blue-50 border-l-4 border-blue-500">
                 <h4 className="font-medium text-blue-900 mb-2">Взвешенное решение</h4>
                 <p className="text-sm text-blue-800">
-                  Рекомендуемый заказ с учетом всех сценариев: <strong>{fmt(weightedOptimal.optQ)} единиц</strong>
+                  Ожидаемый по сценариям заказ: <strong>{fmt(weightedOptimal.optQ)} единиц</strong>
                 </p>
                 <p className="text-sm text-blue-800 mt-1">
-                  Это решение учитывает вероятности всех сценариев и минимизирует риски.
+                  Это усредненное решение по вероятностям сценариев, а не гарантия оптимума в каждом отдельном сценарии.
                 </p>
               </div>
 
@@ -669,6 +668,9 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                   </p>
                 </div>
                 <button
+                  type="button"
+                  data-testid="forecast-source-toggle-portfolio"
+                  aria-label="Переключить источник прогнозов ML (портфель)"
                   onClick={() => setUseMLForecasts(!useMLForecasts)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useMLForecasts ? 'bg-blue-600' : 'bg-gray-200'
                     }`}
@@ -682,6 +684,11 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
               {useMLForecasts && Object.keys(mlForecasts).length > 0 && (
                 <p className="text-xs text-green-600 mt-2">
                   ✓ Загружено {Object.keys(mlForecasts).length} прогнозов
+                </p>
+              )}
+              {useMLForecasts && mlForecastNotice && (
+                <p data-testid="forecast-disabled-notice-portfolio" className="text-xs text-amber-700 mt-2 border border-amber-200 bg-amber-50 rounded p-2">
+                  {mlForecastNotice}
                 </p>
               )}
             </div>
@@ -784,8 +791,10 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">ROI:</span>
                         <span className="font-medium">
-                          {((portfolioOptimization.current.expectedReturn - portfolioOptimization.current.totalInvestment) /
-                            portfolioOptimization.current.totalInvestment * 100).toFixed(1)}%
+                          {portfolioOptimization.current.totalInvestment > 0
+                            ? (((portfolioOptimization.current.expectedReturn - portfolioOptimization.current.totalInvestment) /
+                              portfolioOptimization.current.totalInvestment) * 100).toFixed(1)
+                            : '0.0'}%
                         </span>
                       </div>
                       <div className="flex justify-between">
@@ -810,8 +819,10 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                       <div className="flex justify-between">
                         <span className="text-sm text-blue-600">ROI:</span>
                         <span className="font-medium">
-                          {((portfolioOptimization.optimal.expectedReturn - portfolioOptimization.optimal.totalInvestment) /
-                            portfolioOptimization.optimal.totalInvestment * 100).toFixed(1)}%
+                          {portfolioOptimization.optimal.totalInvestment > 0
+                            ? (((portfolioOptimization.optimal.expectedReturn - portfolioOptimization.optimal.totalInvestment) /
+                              portfolioOptimization.optimal.totalInvestment) * 100).toFixed(1)
+                            : '0.0'}%
                         </span>
                       </div>
                       <div className="flex justify-between">
@@ -929,14 +940,18 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({
                         data={[
                           {
                             risk: portfolioOptimization.current.portfolioRisk,
-                            return: (portfolioOptimization.current.expectedReturn - portfolioOptimization.current.totalInvestment) /
-                              portfolioOptimization.current.totalInvestment,
+                            return: portfolioOptimization.current.totalInvestment > 0
+                              ? (portfolioOptimization.current.expectedReturn - portfolioOptimization.current.totalInvestment) /
+                              portfolioOptimization.current.totalInvestment
+                              : 0,
                             name: 'Текущий'
                           },
                           {
                             risk: portfolioOptimization.optimal.portfolioRisk,
-                            return: (portfolioOptimization.optimal.expectedReturn - portfolioOptimization.optimal.totalInvestment) /
-                              portfolioOptimization.optimal.totalInvestment,
+                            return: portfolioOptimization.optimal.totalInvestment > 0
+                              ? (portfolioOptimization.optimal.expectedReturn - portfolioOptimization.optimal.totalInvestment) /
+                              portfolioOptimization.optimal.totalInvestment
+                              : 0,
                             name: 'Оптимальный'
                           }
                         ]}

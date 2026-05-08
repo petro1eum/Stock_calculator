@@ -59,13 +59,7 @@ export const PortfolioSettingsProvider: React.FC<PortfolioSettingsProviderProps>
     { name: 'Бытовая техника', intraCorrelation: 0.6, interCorrelation: 0.15 },
   ]);
 
-  const [correlationRules, setCorrelationRules] = useState<CorrelationRule[]>([
-    { type: 'complement', items: ['phone', 'case'], factor: 1.2 },
-    { type: 'complement', items: ['printer', 'ink'], factor: 1.3 },
-    { type: 'substitute', items: ['brand_a', 'brand_b'], factor: 0.8 },
-    { type: 'seasonal', items: ['summer'], factor: 2.0, condition: 'summer' },
-    { type: 'seasonal', items: ['winter'], factor: 2.0, condition: 'winter' },
-  ]);
+  const [correlationRules, setCorrelationRules] = useState<CorrelationRule[]>([]);
 
   return (
     <PortfolioSettingsContext.Provider

@@ -32,15 +32,17 @@
 # Скачайте проект
 git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
 
-# Перейдите в папку проекта
-cd YOUR_REPO_NAME
+# Перейдите в каталог приложения
+cd YOUR_REPO_NAME/stock-calculator
 
 # Установите зависимости
 npm install
 
-# Запустите приложение
+# Запустите UI (для курсов ЦБР и заглушки прогнозов параллельно нужен локальный API — см. LOCAL_DEV.md)
 npm start
 ```
+
+Подробнее про локальный сервер и SQLite: **`stock-calculator/LOCAL_DEV.md`**.
 
 Откроется браузер с приложением на `http://localhost:3000`
 

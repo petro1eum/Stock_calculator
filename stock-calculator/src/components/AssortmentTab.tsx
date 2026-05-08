@@ -429,6 +429,8 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
           Добавить новый товар
         </button>
         <button
+          type="button"
+          data-testid="btn-load-demo"
           onClick={loadDemoData}
           className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
@@ -494,19 +496,31 @@ const AssortmentTab: React.FC<AssortmentTabProps> = ({
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                       <button
-                        onClick={() => selectProductForAnalysis(product)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          selectProductForAnalysis(product);
+                        }}
                         className="text-indigo-600 hover:text-indigo-900"
                       >
                         Анализ
                       </button>
                       <button
-                        onClick={() => editProduct(product)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          editProduct(product);
+                        }}
                         className="text-yellow-600 hover:text-yellow-900"
                       >
                         Изменить
                       </button>
                       <button
-                        onClick={() => deleteProduct(product.id)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteProduct(product.id);
+                        }}
                         className="text-red-600 hover:text-red-900"
                       >
                         Удалить

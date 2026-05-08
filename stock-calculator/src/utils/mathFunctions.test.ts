@@ -41,12 +41,23 @@ describe('Mathematical Functions', () => {
     it('should return intrinsic value when T=0', () => {
       const S = 100;
       const K = 90;
-      const T = 0.001; // Close to 0
+      const T = 0;
       const sigma = 0.3;
       const r = 0.05;
       
       const { optionValue } = blackScholesCall(S, K, T, sigma, r);
-      expect(optionValue).toBeCloseTo(10, 1); // S - K = 10
+      expect(optionValue).toBe(10);
+    });
+
+    it('should match the canonical Black-Scholes benchmark', () => {
+      const S = 100;
+      const K = 100;
+      const T = 1;
+      const sigma = 0.2;
+      const r = 0.05;
+
+      const { optionValue } = blackScholesCall(S, K, T, sigma, r);
+      expect(optionValue).toBeCloseTo(10.4506, 3);
     });
     
     it('should return 0 for deeply out-of-the-money options', () => {
@@ -72,6 +83,41 @@ describe('Mathematical Functions', () => {
       const { optionValue: valueHigh } = blackScholesCall(S, K, T, sigmaHigh, r);
       
       expect(valueHigh).toBeGreaterThan(valueLow);
+    });
+
+    it('should increase when expected revenue increases', () => {
+      const K = 100;
+      const T = 0.25;
+      const sigma = 0.4;
+      const r = 0.05;
+
+      const { optionValue: lowRevenue } = blackScholesCall(90, K, T, sigma, r);
+      const { optionValue: highRevenue } = blackScholesCall(120, K, T, sigma, r);
+
+      expect(highRevenue).toBeGreaterThan(lowRevenue);
+    });
+
+    it('should decrease when inventory strike increases', () => {
+      const S = 120;
+      const T = 0.25;
+      const sigma = 0.4;
+      const r = 0.05;
+
+      const { optionValue: lowStrike } = blackScholesCall(S, 90, T, sigma, r);
+      const { optionValue: highStrike } = blackScholesCall(S, 130, T, sigma, r);
+
+      expect(lowStrike).toBeGreaterThan(highStrike);
+    });
+
+    it('should discount the strike when volatility is zero', () => {
+      const S = 100;
+      const K = 90;
+      const T = 1;
+      const sigma = 0;
+      const r = 0.05;
+
+      const { optionValue } = blackScholesCall(S, K, T, sigma, r);
+      expect(optionValue).toBeCloseTo(S - K * Math.exp(-r * T), 5);
     });
   });
   

@@ -1,12 +1,19 @@
 import { 
   mcDemandLoss, 
   getEffectivePurchasePrice, 
+  calculateInventoryStrike,
+  annualizeLognormalVolatilityFromMoments,
+  calibrateRevenueVolatilityFromSales,
   calculateExpectedRevenue, 
   calculateVolatility,
+  computeWeeklyStatsForSeries,
+  computeWeeklyStatsAdjustedForStockouts,
   getSeasonalDemand,
-  getAverageSeasonalDemand 
+  getAverageSeasonalDemand,
+  aggregateLatestStockSnapshots,
+  updateProductsFromSales
 } from './inventoryCalculations';
-import { MonteCarloParams, VolumeDiscount, SeasonalityData } from '../types';
+import { MonteCarloParams, VolumeDiscount, SeasonalityData, SalesRecord, StockRecord } from '../types';
 
 describe('Inventory Calculations', () => {
   
@@ -60,6 +67,72 @@ describe('Inventory Calculations', () => {
       expect(getEffectivePurchasePrice(100, 600, discounts)).toBe(80); // 20% off
     });
   });
+
+  describe('calculateInventoryStrike', () => {
+    it('should include purchase and holding costs without pre-accruing interest', () => {
+      const strike = calculateInventoryStrike(10, 100, 2, 4);
+      expect(strike).toBe(1080);
+    });
+  });
+
+  describe('volatility calibration checks', () => {
+    const endDate = new Date('2026-01-29T00:00:00.000Z');
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+
+    const weeklySales = (revenues: number[]): SalesRecord[] => {
+      const startMs = endDate.getTime() - revenues.length * weekMs;
+      return revenues.map((revenue, index) => ({
+        date: new Date(startMs + (index + 0.5) * weekMs).toISOString(),
+        sku: 'SKU-1',
+        units: revenue / 100,
+        revenue
+      }));
+    };
+
+    it('should annualize horizon volatility before using it in Black-Scholes', () => {
+      const annualized = annualizeLognormalVolatilityFromMoments(100, 20, 0.25);
+      expect(annualized).toBeCloseTo(0.3960844, 7);
+    });
+
+    it('should estimate higher revenue volatility for unstable weekly sales', () => {
+      const stable = calibrateRevenueVolatilityFromSales(
+        weeklySales([1000, 1000, 1000, 1000, 1000, 1000]),
+        endDate,
+        6
+      );
+      const volatile = calibrateRevenueVolatilityFromSales(
+        weeklySales([500, 1500, 500, 1500, 500, 1500]),
+        endDate,
+        6
+      );
+
+      expect(stable.annualizedSigma).toBeCloseTo(0, 8);
+      expect(volatile.annualizedSigma).toBeGreaterThan(stable.annualizedSigma);
+      expect(volatile.weeksUsed).toBe(6);
+    });
+
+    it('should estimate true demand when a partial stockout hides sales', () => {
+      const sales: SalesRecord[] = [
+        { date: new Date(endDate.getTime() - 3.5 * weekMs).toISOString(), sku: 'SKU-1', units: 10, revenue: 1000 },
+        { date: new Date(endDate.getTime() - 2.5 * weekMs).toISOString(), sku: 'SKU-1', units: 10, revenue: 1000 },
+        { date: new Date(endDate.getTime() - 1.5 * weekMs).toISOString(), sku: 'SKU-1', units: 5, revenue: 500 },
+        { date: new Date(endDate.getTime() - 0.5 * weekMs).toISOString(), sku: 'SKU-1', units: 10, revenue: 1000 }
+      ];
+      const stocks: StockRecord[] = [
+        { date: new Date(endDate.getTime() - 3.5 * weekMs).toISOString(), sku: 'SKU-1', quantity: 10 },
+        { date: new Date(endDate.getTime() - 2.5 * weekMs).toISOString(), sku: 'SKU-1', quantity: 10 },
+        { date: new Date(endDate.getTime() - 1.75 * weekMs).toISOString(), sku: 'SKU-1', quantity: 10 },
+        { date: new Date(endDate.getTime() - 1.25 * weekMs).toISOString(), sku: 'SKU-1', quantity: 0 },
+        { date: new Date(endDate.getTime() - 0.5 * weekMs).toISOString(), sku: 'SKU-1', quantity: 10 }
+      ];
+
+      const raw = computeWeeklyStatsForSeries(sales, endDate, 4);
+      const adjusted = computeWeeklyStatsAdjustedForStockouts(sales, stocks, endDate, 4);
+
+      expect(raw.muWeek).toBeCloseTo(8.75, 2);
+      expect(adjusted.muWeek).toBeCloseTo(10, 2);
+    });
+  });
   
   describe('calculateExpectedRevenue', () => {
     it('should return 0 for zero quantity', () => {
@@ -86,6 +159,14 @@ describe('Inventory Calculations', () => {
       );
       
       expect(revenueWithRush).toBeGreaterThan(revenueWithoutRush);
+    });
+
+    it('should reduce rush revenue by rushSave for deterministic demand', () => {
+      const revenue = calculateExpectedRevenue(
+        50, 25, 0, 4, 10, 5, 1, 3, mcDemandLoss, defaultMonteCarloParams
+      );
+
+      expect(revenue).toBe(1350);
     });
   });
   
@@ -138,6 +219,38 @@ describe('Inventory Calculations', () => {
       // Average over 52 weeks should be (9*1 + 3*2) / 12 = 1.25
       const avg = getAverageSeasonalDemand(100, seasonality, 52);
       expect(avg).toBeCloseTo(125, 0);
+    });
+  });
+
+  describe('WB data normalization', () => {
+    it('should use the latest stock snapshot per sku, barcode and warehouse', () => {
+      const { totalBySku, stockBySkuWarehouse } = aggregateLatestStockSnapshots([
+        { date: '2026-01-01T00:00:00Z', sku: 'SKU-1', barcode: 'A', warehouse: 'Коледино', quantity: 10 },
+        { date: '2026-01-02T00:00:00Z', sku: 'SKU-1', barcode: 'A', warehouse: 'Коледино', quantity: 3 },
+        { date: '2026-01-01T00:00:00Z', sku: 'SKU-1', barcode: 'B', warehouse: 'Коледино', quantity: 4 },
+        { date: '2026-01-02T00:00:00Z', sku: 'SKU-1', barcode: 'A', warehouse: 'Казань', quantity: 5 }
+      ]);
+
+      expect(totalBySku.get('SKU-1')).toBe(12);
+      expect(stockBySkuWarehouse.get('SKU-1')).toEqual({ 'Коледино': 7, 'Казань': 5 });
+    });
+
+    it('should update demand and revenue fields from sales history', () => {
+      const products = [{
+        sku: 'SKU-1',
+        muWeek: 0,
+        sigmaWeek: 0,
+        revenue: 0
+      }];
+      const sales: SalesRecord[] = [
+        { date: '2024-01-26T00:00:00Z', sku: 'SKU-1', units: 2, revenue: 200 },
+        { date: '2023-12-22T00:00:00Z', sku: 'SKU-1', units: 3, revenue: 300 }
+      ];
+
+      const [updated] = updateProductsFromSales(products, sales, { weeksWindow: 8 });
+      expect(updated.revenue30d).toBe(200);
+      expect(updated.revenue12m).toBe(500);
+      expect(updated.revenue).toBe(500);
     });
   });
 }); 

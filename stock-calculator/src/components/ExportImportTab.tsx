@@ -1,6 +1,6 @@
 import React from 'react';
 import { Product, SalesRecord, PurchaseRecord, LogisticsRecord } from '../types';
-import { parseSalesCSV, parseSalesXLSX, updateProductsFromSales } from '../utils/inventoryCalculations';
+import { aggregateLatestStockSnapshots, parseSalesCSV, parseSalesXLSX, updateProductsFromSales } from '../utils/inventoryCalculations';
 import WildberriesImporter from './WildberriesImporter';
 import toast from 'react-hot-toast';
 import { usePortfolioSettings } from '../contexts/PortfolioSettingsContext';
@@ -98,12 +98,13 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       toast('В БД нет записей остатков');
       return;
     }
-    const totals = new Map<string, number>();
-    rows.forEach((r: any) => {
-      const sku = String(r.sku);
-      const qty = Number(r.quantity || 0);
-      totals.set(sku, (totals.get(sku) || 0) + qty);
-    });
+    const { totalBySku: totals, stockBySkuWarehouse } = aggregateLatestStockSnapshots(rows.map((r: any) => ({
+      date: r.date,
+      sku: String(r.sku),
+      barcode: r.barcode,
+      warehouse: r.warehouse,
+      quantity: Number(r.quantity || 0)
+    })));
     setProducts(prev => {
       const existing = new Set(prev.map(p => p.sku));
       const skus = Array.from(totals.keys());
@@ -129,7 +130,8 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       }));
       return [...prev, ...newItems].map(p => ({
         ...p,
-        currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0)
+        currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0),
+        stockByWarehouse: stockBySkuWarehouse.get(p.sku) || p.stockByWarehouse
       }));
     });
     toast.success(`Обновлены остатки по SKU: ${totals.size}`);
@@ -238,8 +240,13 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
       });
       upsertLocal('wb_stocks', mapped, ['sku', 'barcode', 'warehouse', 'date']);
       // Автосоздание и обновление currentStock
-      const totals = new Map<string, number>();
-      mapped.forEach((m: any) => totals.set(m.sku, (totals.get(m.sku) || 0) + (m.quantity || 0)));
+      const { totalBySku: totals, stockBySkuWarehouse } = aggregateLatestStockSnapshots(mapped.map((m: any) => ({
+        date: m.date,
+        sku: String(m.sku),
+        barcode: m.barcode,
+        warehouse: m.warehouse,
+        quantity: Number(m.quantity || 0)
+      })));
       setProducts(prev => {
         const existing = new Set(prev.map(p => p.sku));
         const skus = Array.from(totals.keys());
@@ -263,7 +270,11 @@ const ExportImportTab: React.FC<ExportImportTabProps> = ({
           supplier: 'domestic',
           category: ''
         }));
-        return [...prev, ...newItems].map(p => ({ ...p, currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0) }));
+        return [...prev, ...newItems].map(p => ({
+          ...p,
+          currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : (p.currentStock || 0),
+          stockByWarehouse: stockBySkuWarehouse.get(p.sku) || p.stockByWarehouse
+        }));
       });
       toast.success(`Импортировано остатков: ${mapped.length}`);
     } catch (err: any) {

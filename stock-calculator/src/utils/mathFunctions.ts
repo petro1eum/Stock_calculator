@@ -23,8 +23,9 @@ export const blackScholesCall = (
 ): { optionValue: number } => {
   // Защита от edge cases
   if (T <= 0) return { optionValue: Math.max(0, S - K) };
-  if (S <= 1e-6 || K <= 1e-6) return { optionValue: Math.max(0, S - K) };
-  if (sigma <= 1e-6) return { optionValue: Math.max(0, S - K) };
+  if (S <= 1e-6) return { optionValue: 0 };
+  if (K <= 1e-6) return { optionValue: S };
+  if (sigma <= 1e-6) return { optionValue: Math.max(0, S - K * Math.exp(-r * T)) };
   
   // Для случаев глубоко "в деньгах" (S >> K)
   const ratio = S / K;

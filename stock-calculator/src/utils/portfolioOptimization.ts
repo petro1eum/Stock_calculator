@@ -8,8 +8,13 @@ import {
   EfficientFrontierPoint,
   DeliverySchedule
 } from '../types/portfolio';
-import { blackScholesCall } from './mathFunctions';
-import { optimizeQuantity, strictBSMixtureOptionValue } from './inventoryCalculations';
+import {
+  buildDecisionContext,
+  evaluateInventoryDecision,
+  InventoryDecisionContext,
+  optimizeInventoryDecision,
+  ScenarioAdjustment
+} from './inventoryDecision';
 
 // Валюты и их волатильности (базовые значения)
 const CURRENCIES: Map<string, Currency> = new Map([
@@ -43,8 +48,23 @@ export class PortfolioOptimizer {
     // Опционально: ковариации/корреляции из ProbStates. Формат: productId -> (productId -> rho)
     private probStatesCorrById?: Map<number, Map<number, number>>,
     // Опционально: сценарии для строгого Black‑Scholes
-    private bsScenarios?: Array<{ probability: number; muWeekMultiplier: number; sigmaWeekMultiplier: number }>
+    private bsScenarios?: Array<{ probability: number; muWeekMultiplier: number; sigmaWeekMultiplier: number }>,
+    private configuredCurrencies?: Currency[],
+    private configuredSuppliers?: Array<{ code: string; volatility: number }>
   ) { }
+
+  private buildContext(maxUnits?: number): InventoryDecisionContext {
+    return buildDecisionContext({
+      weeks: this.weeks,
+      hold: this.hold,
+      r: this.r,
+      rushProb: this.rushProb,
+      rushSave: this.rushSave,
+      csl: this.constraints.targetServiceLevel || 0.95,
+      maxUnits: Math.max(0, Math.floor(maxUnits ?? this.constraints.warehouseCapacity ?? 0)),
+      monteCarloParams: this.monteCarloParams
+    });
+  }
 
   // Построение недельных рядов выручки (₽) для каждого товара, для оценки ковариаций
   private buildWeeklyRevenueSeries(lookbackWeeks: number = 26): Map<number, number[]> {
@@ -105,15 +125,15 @@ export class PortfolioOptimizer {
   }
 
   private getExchangeRate(currency: string): number {
-    return CURRENCIES.get(currency)?.rate || 1.0;
+    return this.configuredCurrencies?.find(c => c.code === currency)?.rate ?? CURRENCIES.get(currency)?.rate ?? 1.0;
   }
 
   private getCurrencyVolatility(currency: string): number {
-    return CURRENCIES.get(currency)?.volatility || 0.15;
+    return this.configuredCurrencies?.find(c => c.code === currency)?.volatility ?? CURRENCIES.get(currency)?.volatility ?? 0.15;
   }
 
   private getLogisticsVolatility(supplier: string): number {
-    return LOGISTICS_VOLATILITY.get(supplier) || 0.15;
+    return this.configuredSuppliers?.find(s => s.code === supplier)?.volatility ?? LOGISTICS_VOLATILITY.get(supplier) ?? 0.15;
   }
 
   private calculateCombinedVolatility(product: Product): number {
@@ -127,11 +147,10 @@ export class PortfolioOptimizer {
 
   // Основная функция оптимизации
   optimize(): PortfolioAllocation {
-    // 1. Нормализуем все продукты (для стоимости/объема); строгую ценность считаем по смеси сценариев
+    // 1. Нормализуем все продукты только для стоимости/объема; ценность считаем через inventoryDecision.
     const normalizedProducts = this.products.map(p => this.normalizeProduct(p));
 
-    // 2. Для ранжирования используем строгую BS-ценность по смеси сценариев на оптимальном q*;
-    //    score = value_best / (bestQ * unitCostApprox)
+    // 2. Для ранжирования используем тот же SKU-контракт, что и основной ассортимент.
     const scenarios = (this.bsScenarios && this.bsScenarios.length > 0)
       ? this.bsScenarios
       : [{ probability: 1, muWeekMultiplier: 1, sigmaWeekMultiplier: 1 }];
@@ -146,22 +165,22 @@ export class PortfolioOptimizer {
         if (upperBound <= 0) {
           return { ...np, score: 0, bestQ: 0, bestValue: 0 } as any;
         }
-        const evalQ = (q: number) => strictBSMixtureOptionValue(
-          q,
-          Math.max(0, p.muWeek || 0),
-          Math.max(0, p.sigmaWeek || 0),
-          this.weeks,
-          Math.max(0, p.purchase || 0),
-          Math.max(0, p.margin || 0),
-          this.rushProb,
-          this.rushSave,
-          scenarios,
-          this.r,
-          this.hold,
-          p.volumeDiscounts,
-          this.monteCarloParams
-        );
-        const { bestQ, bestValue } = optimizeQuantity(Math.max(0, minQty), Math.max(0, upperBound), Math.max(5, Math.round((p.muWeek || 1) / 5)), evalQ);
+        const context = this.buildContext(upperBound);
+        const scenarioResults = scenarios.map(scenario => {
+          const adjustment: ScenarioAdjustment = {
+            muWeekMultiplier: scenario.muWeekMultiplier,
+            sigmaWeekMultiplier: scenario.sigmaWeekMultiplier
+          };
+          return {
+            probability: scenario.probability,
+            decision: optimizeInventoryDecision(p, context, adjustment)
+          };
+        });
+        const probabilitySum = Math.max(1e-9, scenarioResults.reduce((sum, row) => sum + row.probability, 0));
+        const bestQ = Math.max(minQty, Math.round(
+          scenarioResults.reduce((sum, row) => sum + row.decision.orderQty * row.probability, 0) / probabilitySum
+        ));
+        const bestValue = scenarioResults.reduce((sum, row) => sum + row.decision.optionValue * row.probability, 0) / probabilitySum;
         const denom = Math.max(1, bestQ * unitCostApprox);
         const score = bestValue / denom;
         return { ...np, score, bestQ, bestValue } as any;
@@ -206,7 +225,7 @@ export class PortfolioOptimizer {
       }
     }
 
-    // 5. Применяем корреляционные правила
+    // 5. Применяем только реальные корреляционные данные, если они пришли во входных параметрах.
     const adjustedAllocation = this.applyCorrelationRules(allocation, normalizedProducts);
 
     // 6. Проверяем, не превышаем ли бюджет после корреляционных правил
@@ -228,38 +247,16 @@ export class PortfolioOptimizer {
     return this.calculatePortfolioMetrics(finalAllocation, normalizedProducts);
   }
 
-  private calculateOptionValue(product: NormalizedProduct): number {
-    const { optionValue } = blackScholesCall(
-      product.S,
-      product.K,
-      product.T,
-      product.sigma,
-      this.r
-    );
-
-    // Если опцион имеет нулевую стоимость, возвращаем хотя бы внутреннюю стоимость
-    if (optionValue === 0 && product.S > product.K) {
-      return product.S - product.K;
-    }
-
-    return optionValue;
+  evaluateAllocation(allocation: Map<number, number>): PortfolioAllocation {
+    return this.calculatePortfolioMetrics(allocation, this.products.map(p => this.normalizeProduct(p)));
   }
 
   private applyCorrelationRules(
     allocation: Map<number, number>,
     products: NormalizedProduct[]
   ): Map<number, number> {
-    const rules: CorrelationRule[] = [
-      // Комплементарные товары
-      { type: 'complement', items: ['phone', 'case'], factor: 1.2 },
-      { type: 'complement', items: ['printer', 'ink'], factor: 1.3 },
-      // Субституты
-      { type: 'substitute', items: ['brand_a', 'brand_b'], factor: 0.8 },
-      // Сезонные группы
-      { type: 'seasonal', items: ['summer'], factor: 2.0, condition: 'summer' },
-      { type: 'seasonal', items: ['winter'], factor: 2.0, condition: 'winter' }
-    ];
-
+    if (!this.probStatesCorrById || this.probStatesCorrById.size === 0) return new Map(allocation);
+    const rules: CorrelationRule[] = [];
     const adjusted = new Map(allocation);
 
     for (const rule of rules) {
@@ -339,26 +336,20 @@ export class PortfolioOptimizer {
       const investment = qty * product.K;
       totalInvestment += investment;
 
-      // Строгий BS: ценность для данного товара при количестве qty
+      // Ценность для данного товара при количестве qty через общий SKU-контракт.
       const p = product.originalProduct;
       const scenarios = (this.bsScenarios && this.bsScenarios.length > 0)
         ? this.bsScenarios
         : [{ probability: 1, muWeekMultiplier: 1, sigmaWeekMultiplier: 1 }];
-      const value = strictBSMixtureOptionValue(
-        qty,
-        Math.max(0, p.muWeek || 0),
-        Math.max(0, p.sigmaWeek || 0),
-        this.weeks,
-        Math.max(0, p.purchase || 0),
-        Math.max(0, p.margin || 0),
-        this.rushProb,
-        this.rushSave,
-        scenarios,
-        this.r,
-        this.hold,
-        p.volumeDiscounts,
-        this.monteCarloParams
-      );
+      const context = this.buildContext(qty);
+      const probabilitySum = Math.max(1e-9, scenarios.reduce((sum, scenario) => sum + scenario.probability, 0));
+      const value = scenarios.reduce((sum, scenario) => {
+        const decision = evaluateInventoryDecision(p, qty, context, {
+          muWeekMultiplier: scenario.muWeekMultiplier,
+          sigmaWeekMultiplier: scenario.sigmaWeekMultiplier
+        });
+        return sum + decision.optionValue * scenario.probability;
+      }, 0) / probabilitySum;
       expectedReturn += Math.max(0, value);
 
       // Валютная экспозиция

@@ -90,6 +90,9 @@ extern "C" {
 
     double blackScholesCall_cpp(double S, double K, double T, double sigma, double r) {
         if (T <= 0) return std::max(0.0, S - K);
+        if (S <= 1e-6) return 0.0;
+        if (K <= 1e-6) return S;
+        if (sigma <= 1e-6) return std::max(0.0, S - K * std::exp(-r * T));
         double d1 = (std::log(S / K) + (r + (sigma * sigma) / 2.0) * T) / (sigma * std::sqrt(T));
         double d2 = d1 - sigma * std::sqrt(T);
         return S * normalCDF_cpp(d1) - K * std::exp(-r * T) * normalCDF_cpp(d2);
@@ -123,7 +126,9 @@ extern "C" {
         double muRev = sum / static_cast<double>(trials);
         double varRev = std::max(0.0, sumsq / static_cast<double>(trials) - muRev * muRev);
         double sigmaRev = std::sqrt(varRev);
-        double sigmaBS = muRev > 0 ? std::sqrt(std::log(1.0 + (sigmaRev / muRev) * (sigmaRev / muRev))) : 0.2;
+        double sigmaBS = (muRev > 0 && sigmaRev > 0 && T > 0)
+            ? std::sqrt(std::log(1.0 + (sigmaRev / muRev) * (sigmaRev / muRev))) / std::sqrt(T)
+            : 0.2;
         
         return blackScholesCall_cpp(std::max(muRev, 1e-6), std::max(K, 1e-6), T, std::max(sigmaBS, 1e-6), r);
     }

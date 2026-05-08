@@ -22,22 +22,13 @@ import {
   ProductForm
 } from "./types";
 
-// Импорт математических и расчетных функций
-import {
-  inverseNormal,
-  blackScholesCall
-} from "./utils/mathFunctions";
-
-import {
-  mcDemandLoss,
-  getEffectivePurchasePrice,
-  calculateExpectedRevenue,
-  calculateVolatility,
-  getAverageSeasonalDemand,
-  optimizeQuantity
-} from "./utils/inventoryCalculations";
-import { updateProductsFromSales, updateProductsFromSalesAndStocks } from "./utils/inventoryCalculations";
+import { aggregateLatestStockSnapshots, updateProductsFromSales, updateProductsFromSalesAndStocks } from "./utils/inventoryCalculations";
 import { calculateAdjustedLeadTime, calculateHistoricalLeadTime, calculateLandedCost } from "./utils/logisticsCalculations";
+import {
+  buildDecisionContext,
+  evaluateInventoryDecision,
+  optimizeInventoryDecision
+} from "./utils/inventoryDecision";
 
 import { fetchCbrRateToRub } from "./utils/fx";
 
@@ -52,14 +43,6 @@ const InventoryOptionCalculator = () => {
   const [csl, setCsl] = useState(0.95);           // целевой CSL
   // Выбор склада (на старте только Wildberries)
   const [selectedWarehouse, setSelectedWarehouse] = useState<'wildberries'>('wildberries');
-
-  /* ----- состояние для одного товара (для графика) ----- */
-  const [purchase] = useState(8.5);  // $/шт закуп
-  const [margin] = useState(15);       // $/шт маржа
-  const [muWeek] = useState(800 / 13); // средн. спрос неделя
-  const [sigmaWeek] = useState(0.35 * (800 / 13)); // σ спроса
-  const [series, setSeries] = useState<ChartPoint[]>([]);
-  const [calcMethodUsed, setCalcMethodUsed] = useState<'closed' | 'mc'>('closed');
 
   /* ----- ассортимент ----- */
   const [products, setProducts] = useState<Product[]>([]);
@@ -82,11 +65,6 @@ const InventoryOptionCalculator = () => {
     { name: "Базовый", muWeekMultiplier: 1.0, sigmaWeekMultiplier: 1.0, probability: 0.5 },
     { name: "Оптимистичный", muWeekMultiplier: 1.3, sigmaWeekMultiplier: 0.8, probability: 0.25 }
   ]);
-
-  // Для графиков
-  const [selectedProductId] = useState<number | null>(null);
-
-
 
   // Форма для добавления/редактирования продукта
   const [showProductForm, setShowProductForm] = useState(false);
@@ -141,6 +119,29 @@ const InventoryOptionCalculator = () => {
     } catch { }
   }, [monteCarloParams.method]);
 
+  const decisionContext = useMemo(() => buildDecisionContext({
+    weeks,
+    hold,
+    r,
+    rushProb,
+    rushSave,
+    csl,
+    maxUnits,
+    monteCarloParams
+  }), [weeks, hold, r, rushProb, rushSave, csl, maxUnits, monteCarloParams]);
+
+  const calcMethodUsed = useMemo<'closed' | 'mc'>(() => {
+    if (monteCarloParams.method === 'mc') return 'mc';
+    if (monteCarloParams.method === 'auto') {
+      return products.some(p => {
+        const demand = p.muWeek * weeks;
+        const demandStd = p.sigmaWeek * Math.sqrt(weeks);
+        return demand > 0 && demandStd / demand > 1.0;
+      }) ? 'mc' : 'closed';
+    }
+    return 'closed';
+  }, [monteCarloParams.method, products, weeks]);
+
 
 
   // Демо данные
@@ -192,7 +193,7 @@ const InventoryOptionCalculator = () => {
     let accumulatedPercent = 0;
 
     return sortedItems.map(item => {
-      const percent = item.revenue / totalRevenue;
+      const percent = totalRevenue > 0 ? item.revenue / totalRevenue : 0;
       accumulatedPercent += percent;
 
       let category: 'A' | 'B' | 'C';
@@ -208,96 +209,40 @@ const InventoryOptionCalculator = () => {
     });
   }, []);
 
-  // Обертка для mcDemandLoss с параметрами
-  const mcDemandLossWrapper = useCallback((units: number, muWeek: number, sigmaWeek: number, weeks: number) => {
-    return mcDemandLoss(units, muWeek, sigmaWeek, weeks, monteCarloParams);
-  }, [monteCarloParams]);
-
-  // Обертка для calculateExpectedRevenue
-  const calculateExpectedRevenueWrapper = useCallback((
-    q: number, muWeek: number, sigmaWeek: number, weeks: number,
-    purchase: number, margin: number, rushProb: number, rushSave: number
-  ) => {
-    return calculateExpectedRevenue(q, muWeek, sigmaWeek, weeks, purchase, margin, rushProb, rushSave, mcDemandLossWrapper, monteCarloParams);
-  }, [mcDemandLossWrapper, monteCarloParams]);
-
-  // Расчет оптимальных параметров для текущего товара
-  useEffect(() => {
-    console.log('Пересчет оптимальных параметров. Monte Carlo итераций:', monteCarloParams.iterations);
-
-    const z = inverseNormal(csl);
-    const calculatedSafety = Math.ceil(z * sigmaWeek * Math.sqrt(weeks));
-
-    const step = Math.max(1, Math.round(muWeek / 10));
-    const evaluateQ = (q: number) => {
-      const S = calculateExpectedRevenueWrapper(q, muWeek, sigmaWeek, weeks, purchase, margin, rushProb, rushSave);
-      const K = q * purchase * (1 + r * weeks / 52) + q * hold * weeks;
-      const T = weeks / 52;
-      const sigma = calculateVolatility(muWeek, sigmaWeek, weeks, q, rushProb);
-      const { optionValue } = blackScholesCall(S, K, T, sigma, r);
-      return optionValue;
-    };
-    const { bestQ, bestValue: bestNet } = optimizeQuantity(0, maxUnits, step, evaluateQ);
-    const pts = [] as { q: number; value: number }[];
-    for (let q = 0; q <= maxUnits; q += step) {
-      pts.push({ q, value: evaluateQ(q) });
-    }
-    // Эти значения не используются нигде в приложении, поэтому просто логируем для отладки
-    // Фиксируем, какой метод был применен фактически
-    const expectedDemand = muWeek * weeks;
-    const demandStd = sigmaWeek * Math.sqrt(weeks);
-    const cv = expectedDemand > 0 ? demandStd / expectedDemand : 0;
-    const method = (monteCarloParams.method === 'mc' || (monteCarloParams.method === 'auto' && cv > 1.0)) ? 'mc' : 'closed';
-    setCalcMethodUsed(method);
-    console.log('Оптимальные параметры: Q =', bestQ, ', Value =', bestNet, ', Safety =', calculatedSafety, ', Method =', method);
-    console.log('Оптимальные параметры: Q =', bestQ, ', Value =', bestNet, ', Safety =', calculatedSafety);
-    setSeries(pts);
-  }, [maxUnits, purchase, margin, rushSave, rushProb, hold, r, weeks, muWeek, sigmaWeek, csl, calculateExpectedRevenueWrapper, monteCarloParams]);
-
   // Расчет оптимальных параметров для всего ассортимента
   const productsWithMetrics = useMemo(() => {
-    console.log('Пересчет productsWithMetrics. Monte Carlo итераций:', monteCarloParams.iterations);
-
     return products.map(product => {
-      const z = inverseNormal(csl);
-
-      // Используем средний сезонный спрос для расчетов
-      const seasonalMuWeek = getAverageSeasonalDemand(product.muWeek, product.seasonality, weeks);
-      const productSafety = Math.ceil(z * product.sigmaWeek * Math.sqrt(weeks));
-
-      const step = Math.max(1, Math.round(seasonalMuWeek / 10));
-      const minQ = product.minOrderQty || 0;
-      const maxQ = product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits;
-
-      let effectiveWeeks = weeks;
-      if (product.shelfLife && product.shelfLife > 0) {
-        effectiveWeeks = Math.min(weeks, product.shelfLife);
-      }
-      const currentStock = product.currentStock || 0;
-      const evaluateQ2 = (q: number) => {
-        const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
-        const totalInventory = q + currentStock;
-        const S = calculateExpectedRevenueWrapper(totalInventory, seasonalMuWeek, product.sigmaWeek, effectiveWeeks, effectivePurchase, product.margin, rushProb, rushSave);
-        const K = q * effectivePurchase * (1 + r * effectiveWeeks / 52) + q * hold * effectiveWeeks;
-        const T = effectiveWeeks / 52;
-        const sigma = calculateVolatility(seasonalMuWeek, product.sigmaWeek, effectiveWeeks, totalInventory, rushProb, product.currency, product.supplier);
-        const { optionValue } = blackScholesCall(S, K, T, sigma, r);
-        return optionValue;
-      };
-      let { bestQ, bestValue: bestNet } = optimizeQuantity(minQ, maxQ, step, evaluateQ2);
-
-      if (product.minOrderQty && bestQ < product.minOrderQty) {
-        bestQ = product.minOrderQty;
-      }
+      const decision = optimizeInventoryDecision(product, decisionContext);
+      const leadWeeks = Math.max(0, product.procurementCycleWeeks || decision.planningDemand.weeks);
+      const reorderPoint = Math.ceil(decision.planningDemand.muWeek * leadWeeks + decision.safetyStock);
 
       return {
         ...product,
-        optQ: bestQ,
-        optValue: bestNet,
-        safety: productSafety
+        revenue: decision.analysisRevenue,
+        optQ: decision.orderQty,
+        optValue: decision.optionValue,
+        safety: decision.safetyStock,
+        reorderPoint
       };
     });
-  }, [products, rushSave, rushProb, hold, r, weeks, csl, maxUnits, calculateExpectedRevenueWrapper, monteCarloParams]);
+  }, [products, decisionContext]);
+
+  const selectedProductId = selectedProduct ?? productsWithMetrics[0]?.id ?? null;
+  const series = useMemo<ChartPoint[]>(() => {
+    const product = productsWithMetrics.find(p => p.id === selectedProductId);
+    if (!product) return [];
+    const maxQ = product.maxStorageQty ? Math.min(maxUnits, product.maxStorageQty) : maxUnits;
+    const step = Math.max(1, Math.round(Math.max(product.muWeek, 1) / 10));
+    const points: ChartPoint[] = [];
+    for (let qty = 0; qty <= maxQ; qty += step) {
+      const decision = evaluateInventoryDecision(product, qty, decisionContext);
+      points.push({
+        q: qty,
+        value: decision.optionValue
+      });
+    }
+    return points;
+  }, [productsWithMetrics, selectedProductId, maxUnits, decisionContext]);
 
   // ABC-анализ с использованием продуктов с рассчитанными метриками  
   const abcAnalysisResult = useMemo(() => {
@@ -511,7 +456,7 @@ const InventoryOptionCalculator = () => {
         const subjBySku = new Map<string, string>();
         const nameBySku = new Map<string, string>();
         let priceSnapshot: Map<string, { price?: number; discounted?: number; discount?: number; vendor?: string }> | null = null;
-        const byWarehouseLatest = new Map<string, Map<string, { qty: number; date: number }>>(); // sku -> wh -> {qty, ts}
+        const stockSnapshots: Array<{ date: string; sku: string; barcode?: string; warehouse?: string; quantity: number }> = [];
         // Нормализация названий складов WB
         const normalizeWarehouse = (w?: string | null) => {
           let s = (w && String(w).trim()) ? String(w).trim() : 'UNKNOWN';
@@ -543,7 +488,6 @@ const InventoryOptionCalculator = () => {
         (stocks || []).forEach((r: any) => {
           const sku = String(r.sku);
           const qty = Number(r.quantity || 0);
-          const ts = new Date(r.date).getTime() || 0;
           stockHistory.push({ sku, date: (r.date || '').split('T')[0] + 'T00:00:00Z', quantity: qty });
           const subj = typeof r.raw?.subject === 'string' ? r.raw.subject : undefined;
           // Название берем строго из vendorCode / supplierArticle. Никаких raw.name
@@ -553,35 +497,12 @@ const InventoryOptionCalculator = () => {
           if (name && !nameBySku.has(sku)) nameBySku.set(sku, name);
           const whRaw = (r.warehouse || r.raw?.warehouseName || 'Склад WB').toString();
           const wh = normalizeWarehouse(whRaw);
-          if (!byWarehouseLatest.has(sku)) byWarehouseLatest.set(sku, new Map());
-          const m = byWarehouseLatest.get(sku)!;
-          const prev = m.get(wh);
-          if (!prev || ts >= prev.date) {
-            m.set(wh, { qty, date: ts });
-          }
+          const barcode = String(r.barcode || r.raw?.barcode || 'NO_BARCODE');
+          stockSnapshots.push({ date: r.date, sku, barcode, warehouse: wh, quantity: qty });
         });
 
-        // Суммируем по последним записям для каждого склада
-        byWarehouseLatest.forEach((m, sku) => {
-          let sum = 0;
-          m.forEach(v => { sum += v.qty; });
-          totals.set(sku, sum);
-        });
-
-        // DEBUG: проверка остатков по конкретному SKU
-        try {
-          const debugSku = 'EXAMPLE_SKU_1';
-          if (byWarehouseLatest.has(debugSku)) {
-            const m = byWarehouseLatest.get(debugSku)!;
-            const rows: any[] = [];
-            m.forEach((v, wh) => rows.push({ warehouse: wh, qty: v.qty, ts: new Date(v.date).toISOString() }));
-            const total = rows.reduce((s, r) => s + (r.qty || 0), 0);
-            // eslint-disable-next-line no-console
-            console.table(rows);
-            // eslint-disable-next-line no-console
-            console.log(`WB stocks debug for ${debugSku} total=${total}`);
-          }
-        } catch { }
+        const { totalBySku, stockBySkuWarehouse } = aggregateLatestStockSnapshots(stockSnapshots);
+        totalBySku.forEach((qty, sku) => totals.set(sku, qty));
 
         const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
         let initialProducts: Product[] = Array.from(totals.keys()).map((sku, idx) => ({
@@ -597,12 +518,7 @@ const InventoryOptionCalculator = () => {
           optValue: 0,
           safety: 0,
           currentStock: totals.get(sku) || 0,
-          stockByWarehouse: (() => {
-            const m = byWarehouseLatest.get(sku) || new Map<string, { qty: number; date: number }>();
-            const obj: Record<string, number> = {};
-            m.forEach((v, k) => { obj[k] = v.qty; });
-            return obj;
-          })(),
+          stockByWarehouse: stockBySkuWarehouse.get(sku) || {},
           seasonality: baseSeasonality,
           currency: 'RUB',
           supplier: 'domestic',
@@ -1102,10 +1018,6 @@ const InventoryOptionCalculator = () => {
             r={r}
             weeks={weeks}
             csl={csl}
-            getEffectivePurchasePrice={getEffectivePurchasePrice}
-            calculateExpectedRevenueWrapper={calculateExpectedRevenueWrapper}
-            calculateVolatility={calculateVolatility}
-            blackScholesCall={blackScholesCall}
             exportToCSV={exportToCSV}
             monteCarloParams={monteCarloParams}
             setMonteCarloParams={setMonteCarloParams}

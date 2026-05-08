@@ -65,6 +65,29 @@ export const getEffectivePurchasePrice = (
   return basePrice;
 };
 
+// Страйк для складского "колла": стоимость закупки плюс хранение.
+// Ставку r не включаем сюда, потому что Black-Scholes дисконтирует K сам.
+export const calculateInventoryStrike = (
+  quantity: number,
+  purchase: number,
+  hold: number,
+  weeks: number
+): number => {
+  return quantity * purchase + quantity * hold * weeks;
+};
+
+// Black-Scholes ожидает годовую волатильность. Если σ получена из распределения
+// выручки за конкретный горизонт, переводим ее в годовую шкалу через sqrt(T).
+export const annualizeLognormalVolatilityFromMoments = (
+  mean: number,
+  standardDeviation: number,
+  years: number
+): number => {
+  if (mean <= 0 || standardDeviation <= 0 || years <= 0) return 0;
+  const horizonSigma = Math.sqrt(Math.log(1 + (standardDeviation / mean) ** 2));
+  return horizonSigma / Math.sqrt(years);
+};
+
 // Расчет ожидаемой выручки
 export const calculateExpectedRevenue = (
   q: number,
@@ -315,6 +338,68 @@ export const groupSalesBySKU = (sales: SalesRecord[]): Map<string, SalesRecord[]
   return map;
 };
 
+export const salesRevenueStats = (series: SalesRecord[]) => {
+  const anchorMs = series.reduce((maxTs, sale) => {
+    const ts = new Date(sale.date).getTime();
+    return isNaN(ts) ? maxTs : Math.max(maxTs, ts);
+  }, 0);
+  const now = new Date(anchorMs || Date.now());
+  const msDay = 24 * 60 * 60 * 1000;
+  const start30d = now.getTime() - 30 * msDay;
+  const start12m = now.getTime() - 365 * msDay;
+  let units30d = 0;
+  let revenue30d = 0;
+  let units12m = 0;
+  let revenue12m = 0;
+
+  for (const sale of series) {
+    const ts = new Date(sale.date).getTime();
+    if (isNaN(ts)) continue;
+    const units = Math.max(0, Number(sale.units || 0));
+    const revenue = Math.max(0, Number(sale.revenue || 0));
+    if (ts >= start12m && ts <= now.getTime()) {
+      units12m += units;
+      revenue12m += revenue;
+    }
+    if (ts >= start30d && ts <= now.getTime()) {
+      units30d += units;
+      revenue30d += revenue;
+    }
+  }
+
+  return { units30d, revenue30d, units12m, revenue12m };
+};
+
+export const aggregateLatestStockSnapshots = (
+  stocks: Array<StockRecord & { barcode?: string; warehouse?: string; inWayToClient?: number; inWayFromClient?: number }>
+) => {
+  const latest = new Map<string, { ts: number; sku: string; warehouse: string; quantity: number }>();
+
+  for (const stock of stocks) {
+    const sku = String(stock.sku || '').trim();
+    if (!sku) continue;
+    const barcode = String(stock.barcode || 'NO_BARCODE').trim() || 'NO_BARCODE';
+    const warehouse = String(stock.warehouse || 'NO_WAREHOUSE').trim() || 'NO_WAREHOUSE';
+    const key = `${sku}::${barcode}::${warehouse}`;
+    const ts = new Date(stock.date).getTime() || 0;
+    const current = latest.get(key);
+    if (!current || ts >= current.ts) {
+      latest.set(key, { ts, sku, warehouse, quantity: Math.max(0, Number(stock.quantity || 0)) });
+    }
+  }
+
+  const totalBySku = new Map<string, number>();
+  const stockBySkuWarehouse = new Map<string, Record<string, number>>();
+  latest.forEach(snapshot => {
+    totalBySku.set(snapshot.sku, (totalBySku.get(snapshot.sku) || 0) + snapshot.quantity);
+    const byWarehouse = stockBySkuWarehouse.get(snapshot.sku) || {};
+    byWarehouse[snapshot.warehouse] = (byWarehouse[snapshot.warehouse] || 0) + snapshot.quantity;
+    stockBySkuWarehouse.set(snapshot.sku, byWarehouse);
+  });
+
+  return { totalBySku, stockBySkuWarehouse };
+};
+
 // Подсчет средних продаж и ст. отклонения по неделям за окно weeksWindow, заканчивающееся endDate
 export const computeWeeklyStatsForSeries = (
   series: SalesRecord[],
@@ -339,6 +424,48 @@ export const computeWeeklyStatsForSeries = (
   const variance = n > 1 ? buckets.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1) : 0;
   const sigma = Math.sqrt(variance);
   return { muWeek: mean, sigmaWeek: sigma, totalUnits: sum, totalRevenue: totalRevenue || undefined };
+};
+
+export const calibrateRevenueVolatilityFromSales = (
+  series: SalesRecord[],
+  endDate: Date = new Date(),
+  weeksWindow: number = 26
+): { meanWeeklyRevenue: number; sigmaWeeklyRevenue: number; annualizedSigma: number; weeksUsed: number; totalRevenue: number } => {
+  if (weeksWindow <= 0) {
+    return { meanWeeklyRevenue: 0, sigmaWeeklyRevenue: 0, annualizedSigma: 0, weeksUsed: 0, totalRevenue: 0 };
+  }
+
+  const msInWeek = 7 * 24 * 60 * 60 * 1000;
+  const startMs = endDate.getTime() - weeksWindow * msInWeek;
+  const buckets: number[] = Array(weeksWindow).fill(0);
+
+  for (const rec of series) {
+    if (typeof rec.revenue !== 'number') continue;
+    const t = new Date(rec.date).getTime();
+    if (isNaN(t) || t < startMs || t > endDate.getTime()) continue;
+    const idx = Math.min(weeksWindow - 1, Math.floor((t - startMs) / msInWeek));
+    buckets[idx] += Math.max(0, rec.revenue);
+  }
+
+  const totalRevenue = buckets.reduce((a, b) => a + b, 0);
+  if (totalRevenue <= 0) {
+    return { meanWeeklyRevenue: 0, sigmaWeeklyRevenue: 0, annualizedSigma: 0, weeksUsed: 0, totalRevenue: 0 };
+  }
+
+  const mean = totalRevenue / weeksWindow;
+  const variance = weeksWindow > 1
+    ? buckets.reduce((a, b) => a + (b - mean) ** 2, 0) / (weeksWindow - 1)
+    : 0;
+  const sigma = Math.sqrt(variance);
+  const annualizedSigma = annualizeLognormalVolatilityFromMoments(mean, sigma, 1 / 52);
+
+  return {
+    meanWeeklyRevenue: mean,
+    sigmaWeeklyRevenue: sigma,
+    annualizedSigma,
+    weeksUsed: buckets.filter(v => v > 0).length,
+    totalRevenue
+  };
 };
 
 // Оценка спроса с учетом out-of-stock: если неделя была полностью без стока, не считаем ее как нулевую продажу;
@@ -422,7 +549,18 @@ export const updateProductsFromSalesAndStocks = (
     const kSeries = groupedStocks.get(prod.sku) || [];
     if (sSeries.length === 0) return prod;
     const stats = computeWeeklyStatsAdjustedForStockouts(sSeries, kSeries, endDate, weeksWindow);
-    return { ...prod, muWeek: stats.muWeek, sigmaWeek: stats.sigmaWeek, salesHistory: sSeries };
+    const revenueStats = salesRevenueStats(sSeries);
+    return {
+      ...prod,
+      muWeek: stats.muWeek,
+      sigmaWeek: stats.sigmaWeek,
+      revenue: revenueStats.revenue12m || prod.revenue,
+      sales30d: revenueStats.units30d,
+      revenue30d: revenueStats.revenue30d,
+      sales12m: revenueStats.units12m,
+      revenue12m: revenueStats.revenue12m,
+      salesHistory: sSeries
+    };
   });
 };
 
@@ -439,10 +577,16 @@ export const updateProductsFromSales = (
     const series = grouped.get(prod.sku);
     if (!series || series.length === 0) return prod;
     const stats = computeWeeklyStatsForSeries(series, endDate, weeksWindow);
+    const revenueStats = salesRevenueStats(series);
     return {
       ...prod,
       muWeek: stats.muWeek,
       sigmaWeek: stats.sigmaWeek,
+      revenue: revenueStats.revenue12m || prod.revenue,
+      sales30d: revenueStats.units30d,
+      revenue30d: revenueStats.revenue30d,
+      sales12m: revenueStats.units12m,
+      revenue12m: revenueStats.revenue12m,
       salesHistory: series
     };
   });
@@ -510,7 +654,7 @@ export const strictBSMixtureOptionValue = (
   const fullPrice = effectivePurchase + margin;
   const rushUnitRevenue = Math.max(fullPrice - rushSave, 0);
   const T = weeks / 52;
-  const K = q * effectivePurchase * (1 + r * T) + q * hold * weeks;
+  const K = calculateInventoryStrike(q, effectivePurchase, hold, weeks);
 
   // ограничиваем нагрузки: итерации для Монте‑Карло в пределах [300..2000]
   const trialsBase = (() => {
@@ -565,7 +709,7 @@ export const strictBSMixtureOptionValue = (
     const muRev = sum / trials;
     const varRev = Math.max(0, sumsq / trials - muRev * muRev);
     const sigmaRev = Math.sqrt(varRev);
-    const sigmaBS = muRev > 0 ? Math.sqrt(Math.log(1 + (sigmaRev / muRev) ** 2)) : 0.2;
+    const sigmaBS = annualizeLognormalVolatilityFromMoments(muRev, sigmaRev, T) || 0.2;
 
     const { optionValue } = blackScholesCall(Math.max(muRev, 1e-6), Math.max(K, 1e-6), T, Math.max(sigmaBS, 1e-6), r);
     total += (s.probability || 0) * optionValue;

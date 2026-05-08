@@ -39,28 +39,28 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
       name: p.sku,
       revenue: p.revenue,
       optValue: p.optValue,
-      profit: p.revenue - p.optQ * p.purchase
+      value: p.optValue
     }));
   
   // Данные для графика запасов по категориям
   const inventoryByCategory = [
     { 
       category: 'A', 
-      optimal: productsWithMetrics.filter(p => p.category === 'A').reduce((sum, p) => sum + p.optQ, 0),
+      optimal: productsWithMetrics.filter(p => p.category === 'A').reduce((sum, p) => sum + p.optQ + (p.currentStock || 0), 0),
       current: productsWithMetrics.filter(p => p.category === 'A').reduce((sum, p) => sum + (p.currentStock || 0), 0),
-      value: productsWithMetrics.filter(p => p.category === 'A').reduce((sum, p) => sum + p.optQ * p.purchase, 0)
+      value: productsWithMetrics.filter(p => p.category === 'A').reduce((sum, p) => sum + p.optValue, 0)
     },
     { 
       category: 'B', 
-      optimal: productsWithMetrics.filter(p => p.category === 'B').reduce((sum, p) => sum + p.optQ, 0),
+      optimal: productsWithMetrics.filter(p => p.category === 'B').reduce((sum, p) => sum + p.optQ + (p.currentStock || 0), 0),
       current: productsWithMetrics.filter(p => p.category === 'B').reduce((sum, p) => sum + (p.currentStock || 0), 0),
-      value: productsWithMetrics.filter(p => p.category === 'B').reduce((sum, p) => sum + p.optQ * p.purchase, 0)
+      value: productsWithMetrics.filter(p => p.category === 'B').reduce((sum, p) => sum + p.optValue, 0)
     },
     { 
       category: 'C', 
-      optimal: productsWithMetrics.filter(p => p.category === 'C').reduce((sum, p) => sum + p.optQ, 0),
+      optimal: productsWithMetrics.filter(p => p.category === 'C').reduce((sum, p) => sum + p.optQ + (p.currentStock || 0), 0),
       current: productsWithMetrics.filter(p => p.category === 'C').reduce((sum, p) => sum + (p.currentStock || 0), 0),
-      value: productsWithMetrics.filter(p => p.category === 'C').reduce((sum, p) => sum + p.optQ * p.purchase, 0)
+      value: productsWithMetrics.filter(p => p.category === 'C').reduce((sum, p) => sum + p.optValue, 0)
     }
   ];
 
@@ -78,7 +78,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
               <Tooltip formatter={(value: number) => `₽${fmt(value)}`} />
               <Legend />
               <Line type="monotone" dataKey="optionValue" stroke="#8b5cf6" name="Ценность опциона" strokeWidth={2} />
-              <Line type="monotone" dataKey="profit" stroke="#10b981" name="Прибыль" strokeDasharray="5 5" />
+              <Line type="monotone" dataKey="profit" stroke="#10b981" name="Ценность решения после затрат" strokeDasharray="5 5" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -117,7 +117,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
             <Tooltip formatter={(value: number) => `₽${fmt(value)}`} />
             <Legend />
             <Bar dataKey="revenue" fill="#3b82f6" name="Выручка" />
-            <Bar dataKey="profit" fill="#10b981" name="Прибыль" />
+            <Bar dataKey="value" fill="#10b981" name="Опционная ценность" />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -140,7 +140,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
       
       {/* График сезонности для выбранного товара */}
       {selectedProductId && (() => {
-        const product = products.find(p => p.id === selectedProductId);
+        const product = productsWithMetrics.find(p => p.id === selectedProductId);
         if (!product?.seasonality?.enabled) return null;
         
         const seasonalData = product.seasonality.monthlyFactors.map((factor, index) => ({

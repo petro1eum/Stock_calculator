@@ -13,8 +13,7 @@ export const calculateExpectedRevenueFixed = (
   mcTrials: number = 5000
 ): number => {
   const fullPrice = purchase + margin;
-  const rushPrice = fullPrice; // Rush-продажи по полной цене
-  const rushCost = purchase + rushSave; // Но обходятся дороже
+  const rushUnitRevenue = Math.max(fullPrice - rushSave, 0);
   
   let totalRevenue = 0;
   
@@ -38,8 +37,8 @@ export const calculateExpectedRevenueFixed = (
     // Выручка от обычных продаж
     const normalRevenue = normalSales * fullPrice;
     
-    // Выручка от rush-продаж (с учетом дополнительных затрат)
-    const rushRevenue = rushSales * rushPrice;
+    // Выручка от rush-продаж после дополнительных затрат
+    const rushRevenue = rushSales * rushUnitRevenue;
     
     // Общая выручка для этого сценария
     const scenarioRevenue = normalRevenue + rushRevenue;

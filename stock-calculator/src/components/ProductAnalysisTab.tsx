@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } from "recharts";
 import { Product, ChartPoint, MonteCarloParams } from '../types';
 import { formatNumber } from '../utils/mathFunctions';
+import { buildDecisionContext, evaluateInventoryDecision } from '../utils/inventoryDecision';
 import toast from 'react-hot-toast';
 
 interface ProductAnalysisTabProps {
@@ -17,11 +18,6 @@ interface ProductAnalysisTabProps {
   r: number;
   weeks: number;
   csl: number;
-  // Функции для расчетов
-  getEffectivePurchasePrice: (basePrice: number, quantity: number, volumeDiscounts?: any[]) => number;
-  calculateExpectedRevenueWrapper: (q: number, muWeek: number, sigmaWeek: number, weeks: number, purchase: number, margin: number, rushProb: number, rushSave: number) => number;
-  calculateVolatility: (muWeek: number, sigmaWeek: number, weeks: number, q: number, rushProb?: number, currency?: string, supplier?: string) => number;
-  blackScholesCall: (S: number, K: number, T: number, sigma: number, r: number) => { optionValue: number };
   exportToCSV: () => void;
   monteCarloParams: MonteCarloParams;
   setMonteCarloParams: React.Dispatch<React.SetStateAction<MonteCarloParams>>;
@@ -39,10 +35,6 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
   r,
   weeks,
   csl,
-  getEffectivePurchasePrice,
-  calculateExpectedRevenueWrapper,
-  calculateVolatility,
-  blackScholesCall,
   exportToCSV,
   monteCarloParams,
   setMonteCarloParams
@@ -51,6 +43,16 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
 
   const product = productsWithMetrics.find(p => p.id === selectedProduct);
   const fmtRub = (n: number) => new Intl.NumberFormat('ru-RU').format(Math.round(n || 0));
+  const decisionContext = useMemo(() => buildDecisionContext({
+    weeks,
+    hold,
+    r,
+    rushProb,
+    rushSave,
+    csl,
+    maxUnits,
+    monteCarloParams
+  }), [weeks, hold, r, rushProb, rushSave, csl, maxUnits, monteCarloParams]);
 
   // Обновляем testQuantity при смене товара
   React.useEffect(() => {
@@ -67,31 +69,21 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
     const step = Math.max(10, Math.round(maxUnits / targetPoints));
 
     for (let q = 0; q <= maxUnits; q += step) {
-      const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
-      const S = calculateExpectedRevenueWrapper(q, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
-      const K = q * effectivePurchase * (1 + r * weeks / 52) + q * hold * weeks;
-      const T = weeks / 52;
-      const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q, rushProb, product.currency, product.supplier);
-      const { optionValue } = blackScholesCall(S, K, T, sigma, r);
-      data.push({ q, value: optionValue });
+      const decision = evaluateInventoryDecision(product, q, decisionContext);
+      data.push({ q, value: decision.optionValue });
     }
 
     // Добавляем ключевые точки
     const keyPoints = [product.optQ, product.safety];
     keyPoints.forEach(keyPoint => {
       if (!data.find(point => Math.abs(point.q - keyPoint) < step / 2)) {
-        const effectivePurchase = getEffectivePurchasePrice(product.purchase, keyPoint, product.volumeDiscounts);
-        const S = calculateExpectedRevenueWrapper(keyPoint, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
-        const K = keyPoint * effectivePurchase * (1 + r * weeks / 52) + keyPoint * hold * weeks;
-        const T = weeks / 52;
-        const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, keyPoint, rushProb, product.currency, product.supplier);
-        const { optionValue } = blackScholesCall(S, K, T, sigma, r);
-        data.push({ q: keyPoint, value: optionValue });
+        const decision = evaluateInventoryDecision(product, keyPoint, decisionContext);
+        data.push({ q: keyPoint, value: decision.optionValue });
       }
     });
 
     return data.sort((a, b) => a.q - b.q);
-  }, [product, maxUnits, weeks, rushProb, rushSave, hold, r, getEffectivePurchasePrice, calculateExpectedRevenueWrapper, calculateVolatility, blackScholesCall]);
+  }, [product, maxUnits, decisionContext]);
 
   // Расчет метрик для калькулятора "Что если"
   const calcMetricsForQ = useCallback((q: number) => {
@@ -103,46 +95,19 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
       roi: 0
     };
 
-    const effectivePurchase = getEffectivePurchasePrice(product.purchase, q, product.volumeDiscounts);
-    const S = calculateExpectedRevenueWrapper(q, product.muWeek, product.sigmaWeek, weeks, effectivePurchase, product.margin, rushProb, rushSave);
-    const K = q * effectivePurchase * (1 + r * weeks / 52) + q * hold * weeks;
-    const T = weeks / 52;
-    const sigma = calculateVolatility(product.muWeek, product.sigmaWeek, weeks, q, rushProb, product.currency, product.supplier);
-    const { optionValue } = blackScholesCall(S, K, T, sigma, r);
+    const decision = evaluateInventoryDecision(product, q, decisionContext);
 
     return {
-      value: optionValue,
-      investment: q * effectivePurchase,
-      storage: q * hold * weeks,
-      revenue: S,
-      roi: q > 0 ? (optionValue / (q * effectivePurchase)) * 100 : 0
+      value: decision.optionValue,
+      investment: decision.investment,
+      storage: decision.storageCost,
+      revenue: decision.expectedRevenue,
+      roi: decision.roi
     };
-  }, [product, weeks, rushProb, rushSave, hold, r, getEffectivePurchasePrice, calculateExpectedRevenueWrapper, calculateVolatility, blackScholesCall]);
+  }, [product, decisionContext]);
 
   const currentMetrics = calcMetricsForQ(testQuantity);
   const optimalMetrics = calcMetricsForQ(product?.optQ || 0);
-
-  // Тестовый блок: оценка себестоимости для партии 1171 шт из Китая
-  const testChinaBatch = React.useMemo(() => {
-    if (!product) return null as any;
-    const qty = product.importUnitsPerBatch ?? 1171;
-    const yuanPerUnit = product.importCnyPerUnit ?? 21; // 21 юань за единицу
-    const kgTotal = product.importWeightKgPerBatch ?? 382; // общий вес партии, кг (с обрешеткой)
-    const usdPerKg = product.importUsdPerKg ?? 3; // логистика $/кг
-    const cnyToRub = (window as any)?.FX_CNY_RUB || 13; // временно из глобала/стора, ниже покажем актуальный
-    const usdToRub = (window as any)?.FX_USD_RUB || 90; // временно
-    const unitCostRub = yuanPerUnit * cnyToRub; // себестоимость за единицу в рублях
-    const logisticsRubTotal = kgTotal * usdPerKg * usdToRub; // логистика на всю партию в рублях
-    const logisticsPerUnitRub = logisticsRubTotal / qty;
-    const fullUnitCostRub = unitCostRub + logisticsPerUnitRub;
-    return {
-      qty,
-      unitCostRub,
-      logisticsPerUnitRub,
-      fullUnitCostRub,
-      logisticsRubTotal
-    };
-  }, [product]);
 
   const annualRevenueRub = React.useMemo(() => {
     if (!product) return 0;
@@ -207,25 +172,10 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
   return (
     <div className="bg-white rounded-lg shadow-md p-4">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Анализ товара: {product.name} ({product.sku})</h3>
+        <h3 className="text-lg font-semibold" data-testid="product-analysis-title">
+          Анализ товара: {product.name} ({product.sku})
+        </h3>
         <div className="flex gap-2">
-          <button
-            className="px-3 py-1 bg-gray-100 text-gray-700 rounded border hover:bg-gray-50"
-            onClick={async () => {
-              try {
-                await fetch(`/api/db-load?table=fx_rates&limit=1`, { headers: { Authorization: 'Bearer dummy' } }).catch(() => null);
-                // Поскольку серверного токена нет в клиенте, просто дернем CBR напрямую
-                const cbrCny = await fetch(`https://www.cbr-xml-daily.ru/daily_json.js`).then(r => r.json()).catch(() => null);
-                const val = cbrCny?.Valute?.CNY;
-                const usd = cbrCny?.Valute?.USD;
-                if (val?.Value) (window as any).FX_CNY_RUB = val.Value / (val.Nominal || 1);
-                if (usd?.Value) (window as any).FX_USD_RUB = usd.Value / (usd.Nominal || 1);
-                toast.success('Курсы ЦБ обновлены для расчета тестовой партии');
-              } catch { }
-            }}
-          >
-            Обновить курсы ЦБ
-          </button>
           <button
             className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600"
             onClick={() => {
@@ -349,15 +299,6 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
               <div className="text-green-800">{product.currency || 'RUB'} / {product.supplier || 'Domestic'}</div>
             </div>
           </div>
-          {testChinaBatch && (
-            <div className="mt-3 p-2 bg-white border rounded text-xs text-green-800">
-              <div className="font-semibold mb-1">Тестовая партия из Китая (для оценки)</div>
-              <div>Количество: {testChinaBatch.qty} шт</div>
-              <div>Себестоимость ({product?.importCnyPerUnit ?? 21} юань/шт): ₽{fmtRub(testChinaBatch.unitCostRub)} за шт</div>
-              <div>Логистика ({product?.importUsdPerKg ?? 3} $/кг, {product?.importWeightKgPerBatch ?? 382} кг): всего ₽{fmtRub(testChinaBatch.logisticsRubTotal)} ≈ ₽{fmtRub(testChinaBatch.logisticsPerUnitRub)} за шт</div>
-              <div className="font-medium">Итого ориентировочно: ₽{fmtRub(testChinaBatch.fullUnitCostRub)} за шт</div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -402,7 +343,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
           ) : (
             <div className="p-3 bg-green-50 border-l-4 border-green-500 text-green-700">
               <h5 className="font-semibold">Оптимальное решение</h5>
-              <p className="text-sm">Запас {fmt(product.optQ)} шт максимизирует прибыль.</p>
+              <p className="text-sm">Заказ {fmt(product.optQ)} шт максимизирует ценность решения.</p>
             </div>
           )}
         </div>
@@ -425,7 +366,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             <span className="text-xs text-gray-500">штук товара</span>
           </div>
           <div className={`p-3 rounded ${currentMetrics.value > 0 ? 'bg-green-50' : 'bg-red-50'}`}>
-            <div className="text-sm text-gray-600">То заработаю:</div>
+            <div className="text-sm text-gray-600">Ценность решения по модели:</div>
             <div className={`text-lg font-bold ${currentMetrics.value > 0 ? 'text-green-600' : 'text-red-600'}`}>₽{fmtRub(currentMetrics.value)}</div>
             <div className="text-xs text-gray-500">ROI: {currentMetrics.roi.toFixed(1)}%</div>
           </div>
@@ -452,13 +393,13 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
               toast.success(`Установлено оптимальное количество: ${product.optQ} штук`);
             }}
           >
-            💡 Применить оптимальное количество
+            Применить оптимальное количество
           </button>
           <button
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
             onClick={() => exportToCSV()}
           >
-            📊 Экспортировать анализ
+            Экспортировать анализ
           </button>
         </div>
       </div>
@@ -525,14 +466,14 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
 
       {/* График зависимости */}
       <div className="bg-white border rounded-lg p-4">
-        <h4 className="text-md font-semibold mb-2">График анализа прибыльности</h4>
+        <h4 className="text-md font-semibold mb-2">График ценности решения</h4>
         <div className="text-sm text-gray-600 mb-4 space-y-1">
-          <p>Показывает чистую прибыль при разных объемах заказа с учетом:</p>
+          <p>Показывает опционную ценность решения при разных объемах заказа с учетом:</p>
           <ul className="list-disc list-inside ml-2 text-xs">
             <li>Выручки от продаж (обычных и экстренных)</li>
             <li>Минус: затраты на закупку товара</li>
             <li>Минус: затраты на хранение</li>
-            <li>Минус: проценты на замороженный капитал</li>
+            <li>Дисконтирования ставки капитала в модели Black-Scholes</li>
           </ul>
         </div>
         <div className="h-96">
@@ -551,12 +492,12 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
                 tick={{ fontSize: 12 }}
               />
               <YAxis
-                label={{ value: 'Прибыль (₽)', angle: -90, position: 'insideLeft', style: { fontSize: 14 } }}
+                label={{ value: 'Опционная ценность (₽)', angle: -90, position: 'insideLeft', style: { fontSize: 14 } }}
                 tickFormatter={(value) => `₽${fmtRub(Number(value))}`}
                 tick={{ fontSize: 12 }}
               />
               <Tooltip
-                formatter={(value) => ['₽' + fmtRub(Number(value)), 'Прибыль']}
+                formatter={(value) => ['₽' + fmtRub(Number(value)), 'Опционная ценность']}
                 labelFormatter={(value) => `При заказе ${value} шт`}
                 contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', borderRadius: '8px' }}
               />
@@ -624,7 +565,7 @@ const ProductAnalysisTab: React.FC<ProductAnalysisTabProps> = ({
             <div>
               <div className="text-sm font-medium text-orange-900">Оптимальный заказ</div>
               <div className="text-lg font-bold text-orange-600">{fmt(product.optQ)} штук</div>
-              <div className="text-xs text-orange-700">Макс. прибыль: ₽{fmtRub(product.optValue)}</div>
+              <div className="text-xs text-orange-700">Макс. опционная ценность: ₽{fmtRub(product.optValue)}</div>
             </div>
           </div>
           <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">

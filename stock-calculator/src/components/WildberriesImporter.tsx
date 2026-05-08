@@ -1,6 +1,6 @@
 import React from 'react';
 import { Product, SalesRecord } from '../types';
-import { updateProductsFromSales } from '../utils/inventoryCalculations';
+import { aggregateLatestStockSnapshots, updateProductsFromSales } from '../utils/inventoryCalculations';
 
 interface WildberriesImporterProps {
   onUpdateProducts?: React.Dispatch<React.SetStateAction<Product[]>>;
@@ -158,7 +158,7 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
           const existing = new Set(prev.map(p => p.sku));
           const missing = Array.from(new Set(mapped.map((s: any) => String(s.nmId)))).filter(sku => !existing.has(sku));
           const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
-          const newItems = missing.map((sku, idx) => ({
+          const newItems: Product[] = missing.map((sku, idx) => ({
             id: prev.length + idx + 1,
             name: (() => { const rec = mapped.find((m: any) => String(m.nmId) === sku); const n = rec?.supplierArticle; return typeof n === 'string' && n.trim() ? n : (typeof rec?.subject === 'string' ? rec!.subject : 'Товар WB'); })(),
             sku,
@@ -237,11 +237,13 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
       if (onUpdateProducts && mapped.length > 0) {
         onUpdateProducts(prev => {
           const existing = new Set(prev.map(p => p.sku));
-          const totals = new Map<string, number>();
-          mapped.forEach((m: any) => {
-            const sku = String(m.nmId);
-            totals.set(sku, (totals.get(sku) || 0) + (m.quantity || 0));
-          });
+          const { totalBySku: totals, stockBySkuWarehouse } = aggregateLatestStockSnapshots(mapped.map((m: any) => ({
+            date: m.date,
+            sku: String(m.nmId),
+            barcode: m.barcode,
+            warehouse: m.warehouse,
+            quantity: Number(m.quantity || 0)
+          })));
           const missing = Array.from(totals.keys()).filter(sku => !existing.has(sku));
           const baseSeasonality = { enabled: false, monthlyFactors: Array(12).fill(1), currentMonth: new Date().getMonth() } as any;
           const newItems = missing.map((sku, idx) => ({
@@ -262,9 +264,10 @@ const WildberriesImporter: React.FC<WildberriesImporterProps> = ({ onUpdateProdu
             supplier: 'domestic',
             category: ''
           }));
-          const combined = [...prev, ...newItems].map(p => ({
+          const combined = [...prev, ...newItems].map((p: Product) => ({
             ...p,
-            currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : p.currentStock
+            currentStock: totals.has(p.sku) ? (totals.get(p.sku) || 0) : p.currentStock,
+            stockByWarehouse: stockBySkuWarehouse.get(p.sku) || p.stockByWarehouse
           }));
           return combined;
         });

@@ -72,7 +72,7 @@ const ABCAnalysisTab: React.FC<ABCAnalysisTabProps> = ({ products }) => {
                 </div>
                 <div className="flex justify-between">
                   <span>Выручка:</span>
-                  <span className="font-semibold">${fmt(categorySummary[category].revenue)}</span>
+                  <span className="font-semibold">₽{fmt(categorySummary[category].revenue)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>% от общей:</span>
@@ -82,7 +82,7 @@ const ABCAnalysisTab: React.FC<ABCAnalysisTabProps> = ({ products }) => {
                 </div>
                 <div className="flex justify-between">
                   <span>Ценность опционов:</span>
-                  <span className="font-semibold">${fmt(categorySummary[category].optValue)}</span>
+                  <span className="font-semibold">₽{fmt(categorySummary[category].optValue)}</span>
                 </div>
               </div>
             </div>
@@ -140,7 +140,7 @@ const ABCAnalysisTab: React.FC<ABCAnalysisTabProps> = ({ products }) => {
                     {product.name}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${fmt(product.revenue)}
+                    ₽{fmt(product.revenue)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {(product.percent * 100).toFixed(1)}%
@@ -153,7 +153,7 @@ const ABCAnalysisTab: React.FC<ABCAnalysisTabProps> = ({ products }) => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     <span className={product.optValue > 0 ? 'text-green-600' : 'text-red-600'}>
-                      ${fmt(product.optValue)}
+                      ₽{fmt(product.optValue)}
                     </span>
                   </td>
                 </tr>

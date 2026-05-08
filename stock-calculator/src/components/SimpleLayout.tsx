@@ -40,6 +40,8 @@ const SimpleLayout: React.FC<SimpleLayoutProps> = ({
               {navigation.map((item) => (
                 <button
                   key={item.id}
+                  type="button"
+                  data-testid={`nav-${item.id}`}
                   onClick={() => !item.disabled && onTabChange(item.id)}
                   disabled={item.disabled}
                   className={`

@@ -10,15 +10,9 @@ export const inverseNormal = baseInverseNormal;
 export const blackScholesCall = (S: number, K: number, T: number, sigma: number, r: number): number => {
   // Защита от edge cases
   if (T <= 0) return Math.max(0, S - K);
-  if (sigma <= 1e-6) return Math.max(0, S - K);
-
-  // Защита от слишком малых значений S
-  if (S <= 1e-6) {
-    // Опцион глубоко out-of-the-money, но все еще имеет небольшую стоимость
-    return 1e-10;
-  }
-
-  if (K <= 1e-6) return S; // Если страйк = 0, стоимость опциона = S
+  if (S <= 1e-6) return 0;
+  if (K <= 1e-6) return S;
+  if (sigma <= 1e-6) return Math.max(0, S - K * Math.exp(-r * T));
 
   const d1 = (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
   const d2 = d1 - sigma * Math.sqrt(T);
@@ -73,8 +67,9 @@ export const calculateExpectedRevenue = (
     const lostSales = Math.max(0, expectedDemand - q);
     const rushSales = lostSales * rushProb;
     const fullPrice = purchase + margin;
+    const rushUnitRevenue = Math.max(fullPrice - rushSave, 0);
 
-    return normalSales * fullPrice + rushSales * fullPrice;
+    return normalSales * fullPrice + rushSales * rushUnitRevenue;
   }
 
   // Для общего случая используем Monte Carlo
@@ -84,8 +79,9 @@ export const calculateExpectedRevenue = (
   const normalSales = Math.max(0, expectedDemand - lost);
   const rushSales = lost * rushProb;
   const fullPrice = purchase + margin;
+  const rushUnitRevenue = Math.max(fullPrice - rushSave, 0);
 
-  return normalSales * fullPrice + rushSales * fullPrice;
+  return normalSales * fullPrice + rushSales * rushUnitRevenue;
 };
 
 // Расчет волатильности с улучшенной моделью

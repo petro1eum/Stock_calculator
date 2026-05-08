@@ -46,13 +46,14 @@ const Dashboard: React.FC<DashboardProps> = ({
   scenarios,
   riskConfidence
 }) => {
-  const totalInvestment = products.reduce((sum, p) => sum + p.optQ * p.purchase, 0);
+  const metricsProducts = productsWithMetrics;
+  const totalInvestment = metricsProducts.reduce((sum, p) => sum + p.optQ * p.purchase, 0);
   const avgROI = totalInvestment > 0 ? (totalOptionValue / totalInvestment) * 100 : 0;
-  const criticalProducts = products.filter(p => p.optValue < 0).length;
-  const healthyProducts = products.filter(p => p.optValue > 0 && p.optQ >= p.safety).length;
-  const warningProducts = products.filter(p => p.optValue > 0 && p.optQ < p.safety).length;
+  const criticalProducts = metricsProducts.filter(p => p.optValue < 0).length;
+  const healthyProducts = metricsProducts.filter(p => p.optValue > 0 && p.optQ >= p.safety).length;
+  const warningProducts = metricsProducts.filter(p => p.optValue > 0 && p.optQ < p.safety).length;
   
-  const healthScore = products.length > 0 ? (healthyProducts / products.length) * 100 : 0;
+  const healthScore = metricsProducts.length > 0 ? (healthyProducts / metricsProducts.length) * 100 : 0;
 
   const metrics = [
     {
@@ -66,7 +67,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     },
     {
       title: 'Суммарная ценность',
-      value: `$${totalOptionValue.toLocaleString()}`,
+      value: `₽${totalOptionValue.toLocaleString()}`,
       unit: '',
       icon: ArrowTrendingUpIcon,
       color: totalOptionValue > 0 ? 'green' : 'red',
@@ -75,7 +76,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     },
     {
       title: 'Инвестиции в запасы',
-      value: `$${totalInvestment.toLocaleString()}`,
+      value: `₽${totalInvestment.toLocaleString()}`,
       unit: '',
       icon: ChartBarIcon,
       color: 'purple',
@@ -232,7 +233,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: `${products.length > 0 ? (status.count / products.length) * 100 : 0}%` }}
+                    animate={{ width: `${metricsProducts.length > 0 ? (status.count / metricsProducts.length) * 100 : 0}%` }}
                     transition={{ duration: 0.5, delay: index * 0.1 }}
                     className={`h-2 rounded-full bg-${status.color}-500`}
                   />
@@ -246,7 +247,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       {/* Risk Panel */}
       <motion.div variants={itemVariants}>
         <RiskPanel 
-          products={products} 
+          products={metricsProducts} 
           confidence={typeof riskConfidence === 'number' ? riskConfidence : 0.95} 
           lookbackWeeks={26} 
           scenarios={scenarios}

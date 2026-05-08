@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ScenariosTab from './ScenariosTab';
 import { Product, Scenario } from '../types';
+import { PortfolioSettingsProvider } from '../contexts/PortfolioSettingsContext';
 
 // Мокаем recharts
 jest.mock('recharts', () => ({
@@ -51,7 +52,15 @@ jest.mock('../utils/portfolioOptimization', () => {
           { productId: 1, quantity: 100, supplier: 'china', totalValue: 25000 }
         ]
       }
-    ])
+    ]),
+    evaluateAllocation: jest.fn().mockReturnValue({
+      allocations: new Map([[1, 100], [2, 50]]),
+      totalInvestment: 50000,
+      expectedReturn: 60000,
+      portfolioRisk: 0.2,
+      currencyExposure: new Map([['USD', 30000], ['RUB', 20000]]),
+      supplierConcentration: new Map([['china', 30000], ['domestic', 20000]])
+    })
   };
 
   return {
@@ -120,17 +129,23 @@ describe('ScenariosTab', () => {
     jest.clearAllMocks();
   });
 
+  const renderScenariosTab = (props: typeof defaultProps) => render(
+    <PortfolioSettingsProvider>
+      <ScenariosTab {...props} />
+    </PortfolioSettingsProvider>
+  );
+
   it('renders scenario analysis and portfolio optimization tabs', () => {
     // Тестируем только с пустыми товарами чтобы избежать проблем с PortfolioOptimizer
     const emptyProps = { ...defaultProps, products: [] };
-    render(<ScenariosTab {...emptyProps} />);
+    renderScenariosTab(emptyProps);
     
     expect(screen.getByText('Нет товаров для анализа')).toBeInTheDocument();
   });
 
   it('shows message when no products available', () => {
     const emptyProps = { ...defaultProps, products: [] };
-    render(<ScenariosTab {...emptyProps} />);
+    renderScenariosTab(emptyProps);
     
     expect(screen.getByText('Нет товаров для анализа')).toBeInTheDocument();
     expect(screen.getByText('Добавьте товары в ассортимент для проведения сценарного анализа')).toBeInTheDocument();
@@ -138,7 +153,7 @@ describe('ScenariosTab', () => {
 
   it('displays basic scenario analysis interface', () => {
     const emptyProps = { ...defaultProps, products: [] };
-    render(<ScenariosTab {...emptyProps} />);
+    renderScenariosTab(emptyProps);
     
     // Проверяем базовые элементы интерфейса
     expect(screen.getByText('Нет товаров для анализа')).toBeInTheDocument();
@@ -147,7 +162,7 @@ describe('ScenariosTab', () => {
 
   it('switches between tabs', () => {
     const emptyProps = { ...defaultProps, products: [] };
-    render(<ScenariosTab {...emptyProps} />);
+    renderScenariosTab(emptyProps);
     
     // Проверяем что компонент рендерится
     expect(screen.getByText('Нет товаров для анализа')).toBeInTheDocument();
@@ -156,7 +171,7 @@ describe('ScenariosTab', () => {
   it('handles products with seasonality', () => {
     // Тестируем с пустыми товарами
     const emptyProps = { ...defaultProps, products: [] };
-    render(<ScenariosTab {...emptyProps} />);
+    renderScenariosTab(emptyProps);
     
     // Компонент должен корректно обрабатывать отсутствие товаров
     expect(screen.getByText('Нет товаров для анализа')).toBeInTheDocument();
